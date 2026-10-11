@@ -240,14 +240,16 @@ void PistonEngineSimulator::placeAndInitialize() {
 
     const int cylinderCount = m_engine->getCylinderCount();
     for (int i = 0; i < cylinderCount; ++i) {
+        Piston *piston = m_engine->getChamber(i)->getPiston();
+        CylinderHead *head = m_engine->getChamber(i)->getCylinderHead();
+
         m_engine->getChamber(i)->m_system.initialize(
             units::pressure(1.0, units::atm),
             m_engine->getChamber(i)->getVolume(),
-            units::celcius(25.0)
+            units::celcius(25.0),
+            head->getIntake(piston->getCylinderIndex())->getFuelAirMix()
         );
 
-        Piston *piston = m_engine->getChamber(i)->getPiston();
-        CylinderHead *head = m_engine->getChamber(i)->getCylinderHead();
         ExhaustSystem *exhaust = head->getExhaustSystem(piston->getCylinderIndex());
         const double exhaustLength =
             head->getHeaderPrimaryLength(piston->getCylinderIndex())

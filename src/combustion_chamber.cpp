@@ -88,7 +88,8 @@ void CombustionChamber::initialize(const Parameters &params) {
     m_intakeRunnerAndManifold.initialize(
         units::pressure(1.0, units::atm),
         totalIntakeRunnerVolume,
-        units::celcius(25.0));
+        units::celcius(25.0),
+        intake->getFuelAirMix());
     m_intakeRunnerAndManifold.setGeometry(
         overallIntakeRunnerLength,
         intakeRunnerWidth,

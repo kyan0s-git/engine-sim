@@ -23,10 +23,14 @@ Intake::~Intake() {
 
 void Intake::initialize(Parameters &params) {
     const double width = std::sqrt(params.CrossSectionArea);
+    m_molecularAfr = params.MolecularAfr;
+
+    // The manifold starts out filled with the charge the carburetor supplies
     m_system.initialize(
         units::pressure(1.0, units::atm),
         params.volume,
-        units::celcius(25.0));
+        units::celcius(25.0),
+        getFuelAirMix());
     m_system.setGeometry(
         width,
         params.volume / params.CrossSectionArea,
@@ -44,7 +48,6 @@ void Intake::initialize(Parameters &params) {
         0.0);
 
     m_inputFlowK = params.InputFlowK;
-    m_molecularAfr = params.MolecularAfr;
     m_idleFlowK = params.IdleFlowK;
     m_idleThrottlePlatePosition = params.IdleThrottlePlatePosition;
     m_runnerLength = params.RunnerLength;
@@ -57,15 +60,20 @@ void Intake::destroy() {
     /* void */
 }
 
-void Intake::process(double dt) {
+GasSystem::Mix Intake::getFuelAirMix() const {
     const double ideal_afr = 0.8 * m_molecularAfr * 4;
-    const double current_afr = (m_system.mix().p_o2 + m_system.mix().p_inert) / m_system.mix().p_fuel;
-
     const double p_air = ideal_afr / (1 + ideal_afr);
+
     GasSystem::Mix fuelAirMix;
     fuelAirMix.p_fuel = 1 - p_air;
     fuelAirMix.p_inert = p_air * 0.75;
     fuelAirMix.p_o2 = p_air * 0.25;
+
+    return fuelAirMix;
+}
+
+void Intake::process(double dt) {
+    const GasSystem::Mix fuelAirMix = getFuelAirMix();
 
     const double idle_afr = 2.0;
     const double p_idle_air = idle_afr / (1 + idle_afr);

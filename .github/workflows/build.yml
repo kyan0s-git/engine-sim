@@ -33,7 +33,7 @@ jobs:
             os: windows-2022
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -66,9 +66,10 @@ jobs:
       - name: Validate bundled scripts (Linux)
         if: runner.os == 'Linux' && matrix.cc == 'gcc'
         # Compiles every bundled engine and theme script and runs each engine
-        # headlessly (radial.mr files are part libraries, not engines)
+        # headlessly; every engine must start and keep running (radial.mr
+        # files are part libraries, not engines)
         run: |
-          ./build/engine-sim-script-check --data . assets/main.mr assets/themes/*.mr \
+          ./build/engine-sim-script-check --data . --require-running assets/main.mr assets/themes/*.mr \
             $(find assets/engines -name '*.mr' ! -name 'radial.mr' | sort)
 
       - name: Smoke test (Linux)

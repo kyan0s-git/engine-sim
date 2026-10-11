@@ -34,6 +34,7 @@ namespace {
         double simulateSeconds = 3.0;
         bool requireRunning = false;
         bool trace = false;
+        double crankSeconds = 1.5;
         std::vector<std::string> scripts;
     };
 
@@ -158,8 +159,8 @@ namespace {
 
         for (int frame = 0; frame < frames; ++frame) {
             const double t = frame * frameDt;
-            simulator->m_starterMotor.m_enabled = t < 1.5;
-            engine->setSpeedControl(t < 2.0 ? 0.0 : 0.6);
+            simulator->m_starterMotor.m_enabled = t < options.crankSeconds;
+            engine->setSpeedControl(t < options.crankSeconds + 0.5 ? 0.0 : 0.6);
 
             simulator->startFrame(frameDt);
             while (simulator->simulateStep()) { /* void */ }
@@ -237,9 +238,10 @@ int main(int argc, char *argv[]) {
         else if (arg == "--seconds" && i + 1 < argc) options.simulateSeconds = std::atof(argv[++i]);
         else if (arg == "--require-running") options.requireRunning = true;
         else if (arg == "--trace") options.trace = true;
+        else if (arg == "--crank" && i + 1 < argc) options.crankSeconds = std::atof(argv[++i]);
         else if (arg == "--help" || arg == "-h") {
             std::printf(
-                "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] [--trace] <script.mr>...\n",
+                "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] [--crank <s>] [--trace] <script.mr>...\n",
                 argv[0]);
             return 0;
         }

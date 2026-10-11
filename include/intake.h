@@ -43,6 +43,9 @@ class Intake : public Part {
         void initialize(Parameters &params);
         virtual void destroy();
 
+        // Mixture supplied through the throttle
+        GasSystem::Mix getFuelAirMix() const;
+
         void process(double dt);
 
         inline double getRunnerFlowRate() const { return m_runnerFlowRate; }
