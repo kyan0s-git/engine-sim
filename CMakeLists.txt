@@ -98,6 +98,10 @@ add_library(engine-sim STATIC
     src/part.cpp
     src/piston.cpp
     src/piston_engine_simulator.cpp
+    src/wankel_combustion_chamber.cpp
+    src/wankel_engine.cpp
+    src/wankel_engine_simulator.cpp
+    src/wankel_rotor.cpp
     src/simulator.cpp
     src/standard_valvetrain.cpp
     src/starter_motor.cpp
@@ -143,6 +147,10 @@ add_library(engine-sim STATIC
     include/part.h
     include/piston.h
     include/piston_engine_simulator.h
+    include/wankel_combustion_chamber.h
+    include/wankel_engine.h
+    include/wankel_engine_simulator.h
+    include/wankel_rotor.h
     include/simulator.h
     include/standard_valvetrain.h
     include/starter_motor.h
@@ -252,6 +260,7 @@ if (ENGINE_SIM_BUILD_APP)
         src/ui_button.cpp
         src/ui_utilities.cpp
         src/combustion_chamber_object.cpp
+        src/wankel_rotor_object.cpp
         src/oscilloscope.cpp
         src/shaders.cpp
         src/engine_view.cpp
@@ -286,6 +295,7 @@ if (ENGINE_SIM_BUILD_APP)
         include/ui_button.h
         include/ui_utilities.h
         include/combustion_chamber_object.h
+        include/wankel_rotor_object.h
         include/oscilloscope.h
         include/shaders.h
         include/engine_view.h
@@ -433,6 +443,7 @@ if (ENGINE_SIM_BUILD_TESTS)
         test/gas_system_tests.cpp
         test/function_test.cpp
         test/synthesizer_tests.cpp
+        test/wankel_tests.cpp
     )
 
     target_link_libraries(engine-sim-test PRIVATE

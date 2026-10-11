@@ -41,7 +41,7 @@ void IgnitionModule::initialize(const Parameters &params) {
 void IgnitionModule::setFiringOrder(int cylinderIndex, double angle) {
     assert(cylinderIndex < m_cylinderCount);
 
-    m_plugs[cylinderIndex].angle = angle;
+    m_plugs[cylinderIndex].angles.push_back(angle);
     m_plugs[cylinderIndex].enabled = true;
 }
 
@@ -54,32 +54,32 @@ void IgnitionModule::update(double dt) {
     const double cycleAngle = m_crankshaft->getCycleAngle();
 
     if (m_enabled && m_revLimitTimer == 0) {
-        const double fourPi = 4 * constants::pi;
+        const double cycleLength = m_crankshaft->getCycleLength();
         const double advance = getTimingAdvance();
 
         for (int i = 0; i < m_cylinderCount; ++i) {
-            double adjustedAngle = positiveMod(m_plugs[i].angle - advance, fourPi);
-            const double r0 = m_lastCrankshaftAngle;
-            double r1 = cycleAngle;
+            if (!m_plugs[i].enabled) continue;
 
-            if (m_crankshaft->m_body.v_theta < 0) {
-                if (r1 < r0) {
-                    r1 += fourPi;
-                    adjustedAngle += fourPi;
+            for (const double angle : m_plugs[i].angles) {
+                const double adjustedAngle = positiveMod(angle - advance, cycleLength);
+
+                // Fire if the plug's angle was crossed during this step. The
+                // comparison is done modulo the cycle length so that angles
+                // just before the wrap-around point are not skipped.
+                bool crossed;
+                if (m_crankshaft->m_body.v_theta < 0) {
+                    const double travel = positiveMod(cycleAngle - m_lastCrankshaftAngle, cycleLength);
+                    const double d = positiveMod(adjustedAngle - m_lastCrankshaftAngle, cycleLength);
+                    crossed = d < travel;
+                }
+                else {
+                    const double travel = positiveMod(m_lastCrankshaftAngle - cycleAngle, cycleLength);
+                    const double d = positiveMod(m_lastCrankshaftAngle - adjustedAngle, cycleLength);
+                    crossed = d > 0 && d <= travel;
                 }
 
-                if (adjustedAngle >= r0 && adjustedAngle < r1) {
-                    m_plugs[i].ignitionEvent = m_plugs[i].enabled;
-                }
-            }
-            else {
-                if (r1 > r0) {
-                    r1 -= fourPi;
-                    adjustedAngle -= fourPi;
-                }
-
-                if (adjustedAngle >= r1 && adjustedAngle < r0) {
-                    m_plugs[i].ignitionEvent = m_plugs[i].enabled;
+                if (crossed) {
+                    m_plugs[i].ignitionEvent = true;
                 }
             }
         }

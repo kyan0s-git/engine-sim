@@ -22,7 +22,11 @@ namespace es_script {
         EngineNode() { /* void */ }
         virtual ~EngineNode() { /* void */ }
 
-        void buildEngine(Engine *engine) {
+        virtual Engine *createEngine() const {
+            return new Engine;
+        }
+
+        virtual void buildEngine(Engine *engine) {
             int cylinderCount = 0;
             for (const CylinderBankNode *bank : m_cylinderBanks) {
                 cylinderCount += bank->getCylinderCount();

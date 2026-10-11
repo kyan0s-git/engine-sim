@@ -14,6 +14,8 @@
 #include "../include/feedback_comb_filter.h"
 #include "../include/utilities.h"
 #include "../include/piston_engine_simulator.h"
+#include "../include/wankel_engine.h"
+#include "../include/wankel_rotor_object.h"
 
 #ifdef ATG_ENGINE_SIM_PIRANHA_ENABLED
 #include "../scripting/include/compiler.h"
@@ -844,6 +846,26 @@ void EngineSimApplication::configure(const ApplicationSettings &settings) {
 }
 
 void EngineSimApplication::createObjects(Engine *engine) {
+    WankelEngine *wankelEngine = dynamic_cast<WankelEngine *>(engine);
+    if (wankelEngine != nullptr) {
+        for (int i = 0; i < wankelEngine->getRotorCount(); ++i) {
+            WankelRotorObject *rotorObject = new WankelRotorObject;
+            rotorObject->initialize(this);
+            rotorObject->m_engine = wankelEngine;
+            rotorObject->m_rotor = wankelEngine->getRotor(i);
+            m_objects.push_back(rotorObject);
+        }
+
+        for (int i = 0; i < engine->getCrankshaftCount(); ++i) {
+            CrankshaftObject *crankshaftObject = new CrankshaftObject;
+            crankshaftObject->initialize(this);
+            crankshaftObject->m_crankshaft = engine->getCrankshaft(i);
+            m_objects.push_back(crankshaftObject);
+        }
+
+        return;
+    }
+
     for (int i = 0; i < engine->getCylinderCount(); ++i) {
         ConnectingRodObject *rodObject = new ConnectingRodObject;
         rodObject->initialize(this);

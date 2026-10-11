@@ -89,15 +89,20 @@ void Engine::initialize(const Parameters &params) {
     m_connectingRods = new ConnectingRod[m_cylinderCount];
     m_exhaustSystems = new ExhaustSystem[m_exhaustSystemCount];
     m_intakes = new Intake[m_intakeCount];
-    m_combustionChambers = new CombustionChamber[m_cylinderCount];
+    m_combustionChambers = new CombustionChamber *[m_cylinderCount];
 
     for (int i = 0; i < m_exhaustSystemCount; ++i) {
         m_exhaustSystems[i].m_index = i;
     }
 
     for (int i = 0; i < m_cylinderCount; ++i) {
-        m_combustionChambers[i].setEngine(this);
+        m_combustionChambers[i] = createCombustionChamber(i);
+        m_combustionChambers[i]->setEngine(this);
     }
+}
+
+CombustionChamber *Engine::createCombustionChamber(int index) {
+    return new CombustionChamber;
 }
 
 void Engine::destroy() {
@@ -108,7 +113,8 @@ void Engine::destroy() {
     for (int i = 0; i < m_cylinderCount; ++i) {
         m_pistons[i].destroy();
         m_connectingRods[i].destroy();
-        m_combustionChambers[i].destroy();
+        m_combustionChambers[i]->destroy();
+        delete m_combustionChambers[i];
     }
 
     for (int i = 0; i < m_exhaustSystemCount; ++i) {

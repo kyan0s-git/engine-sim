@@ -108,7 +108,7 @@ class Engine : public Part {
         IgnitionModule *getIgnitionModule() { return &m_ignitionModule; }
         ExhaustSystem *getExhaustSystem(int i) const { return &m_exhaustSystems[i]; }
         Intake *getIntake(int i) const { return &m_intakes[i]; }
-        CombustionChamber *getChamber(int i) const { return &m_combustionChambers[i]; }
+        CombustionChamber *getChamber(int i) const { return m_combustionChambers[i]; }
         Fuel *getFuel() { return &m_fuel; }
 
         double getSimulationFrequency() const { return m_initialSimulationFrequency; }
@@ -124,6 +124,9 @@ class Engine : public Part {
         virtual Simulator *createSimulator(Vehicle *vehicle, Transmission *transmission);
 
     protected:
+        virtual CombustionChamber *createCombustionChamber(int index);
+
+    protected:
         std::string m_name;
 
         Crankshaft *m_crankshafts;
@@ -135,7 +138,7 @@ class Engine : public Part {
 
         Piston *m_pistons;
         ConnectingRod *m_connectingRods;
-        CombustionChamber *m_combustionChambers;
+        CombustionChamber **m_combustionChambers;
         int m_cylinderCount;
 
         double m_starterTorque;

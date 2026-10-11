@@ -761,7 +761,7 @@ bool GeometryGenerator::generateRhombus(const Rhombus2dParameters &params) {
 bool GeometryGenerator::generateTrapezoid2d(const Trapezoid2dParameters &params) {
     startSubshape();
 
-    if (!checkCapacity(3, 3)) {
+    if (!checkCapacity(4, 6)) {
         return false;
     }
 
@@ -793,6 +793,74 @@ bool GeometryGenerator::generateTrapezoid2d(const Trapezoid2dParameters &params)
 
     writeFace(0, 1, 2);
     writeFace(1, 3, 2);
+
+    return true;
+}
+
+bool GeometryGenerator::generateFilledPolygon2d(
+    const float *x,
+    const float *y,
+    int n,
+    float center_x,
+    float center_y)
+{
+    if (n < 3 || !checkCapacity(n + 1, n * 3)) {
+        return false;
+    }
+
+    startSubshape();
+
+    dbasic::Vertex *vertex = writeVertex();
+    vertex->Normal = ysMath::Constants::ZAxis;
+    vertex->Pos = ysMath::LoadVector(center_x, center_y, 0.0f, 1.0f);
+    vertex->TexCoord = ysVector2(0.5f, 0.5f);
+
+    for (int i = 0; i < n; ++i) {
+        vertex = writeVertex();
+        vertex->Normal = ysMath::Constants::ZAxis;
+        vertex->Pos = ysMath::LoadVector(x[i], y[i], 0.0f, 1.0f);
+        vertex->TexCoord = ysVector2(0.0f, 0.0f);
+    }
+
+    for (int i = 0; i < n; ++i) {
+        writeFace(0, i + 1, 1 + ((i + 1) % n));
+    }
+
+    return true;
+}
+
+bool GeometryGenerator::generateStrip2d(
+    const float *x0,
+    const float *y0,
+    const float *x1,
+    const float *y1,
+    int n,
+    bool closed)
+{
+    const int segments = closed ? n : n - 1;
+    if (n < 2 || !checkCapacity(2 * n, segments * 6)) {
+        return false;
+    }
+
+    startSubshape();
+
+    for (int i = 0; i < n; ++i) {
+        dbasic::Vertex *vertex = writeVertex();
+        vertex->Normal = ysMath::Constants::ZAxis;
+        vertex->Pos = ysMath::LoadVector(x0[i], y0[i], 0.0f, 1.0f);
+        vertex->TexCoord = ysVector2(0.0f, 0.0f);
+
+        vertex = writeVertex();
+        vertex->Normal = ysMath::Constants::ZAxis;
+        vertex->Pos = ysMath::LoadVector(x1[i], y1[i], 0.0f, 1.0f);
+        vertex->TexCoord = ysVector2(1.0f, 0.0f);
+    }
+
+    for (int i = 0; i < segments; ++i) {
+        const int j = (i + 1) % n;
+        writeFace(2 * i, 2 * i + 1, 2 * j + 1);
+        writeFace(2 * i, 2 * j + 1, 2 * j);
+    }
 
     return true;
 }

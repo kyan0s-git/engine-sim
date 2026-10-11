@@ -314,9 +314,19 @@ void OscilloscopeCluster::sample() {
         + engine->getChamber(0)->m_system.dynamicPressure(-1.0, 0.0);
 
     if (m_simulator->getCurrentIteration() % 2 == 0) {
+        const double cycleLength = engine->getCrankshaft(0)->getCycleLength();
         double cycleAngle = engine->getCrankshaft(0)->getCycleAngle();
         if (!engine->isSpinningCw()) {
-            cycleAngle = 4 * constants::pi - cycleAngle;
+            cycleAngle = cycleLength - cycleAngle;
+        }
+
+        // Rotary engines have a longer cycle than four-stroke engines
+        Oscilloscope *cycleScopes[] = {
+            m_totalExhaustFlowScope, m_exhaustFlowScope, m_intakeFlowScope,
+            m_cylinderMoleculesScope, m_exhaustValveLiftScope,
+            m_intakeValveLiftScope, m_cylinderPressureScope };
+        for (Oscilloscope *scope : cycleScopes) {
+            scope->m_xMax = (float)cycleLength;
         }
 
         getTotalExhaustFlowOscilloscope()->addDataPoint(
@@ -336,12 +346,10 @@ void OscilloscopeCluster::sample() {
             engine->getChamber(0)->m_system.n());
         getExhaustValveLiftOscilloscope()->addDataPoint(
             cycleAngle,
-            engine->getChamber(0)->getCylinderHead()->exhaustValveLift(
-                engine->getChamber(0)->getPiston()->getCylinderIndex()));
+            engine->getChamber(0)->getExhaustOpening());
         getIntakeValveLiftOscilloscope()->addDataPoint(
             cycleAngle,
-            engine->getChamber(0)->getCylinderHead()->intakeValveLift(
-                engine->getChamber(0)->getPiston()->getCylinderIndex()));
+            engine->getChamber(0)->getIntakeOpening());
         getPvScope()->addDataPoint(
             engine->getChamber(0)->getVolume(),
             std::sqrt(engine->getChamber(0)->m_system.pressure()));

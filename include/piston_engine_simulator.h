@@ -41,6 +41,15 @@ class PistonEngineSimulator : public Simulator {
         virtual void simulateStep_() override;
 
     protected:
+        // Adds the engine specific bodies, constraints and force generators
+        // (pistons, connecting rods, ...) to the rigid body system
+        virtual void addEngineParts();
+
+        // Moves the engine's parts into their initial positions
+        virtual void placeParts();
+
+        virtual void processIgnitionEvents();
+
         void placeAndInitialize();
         void placeCylinder(int i);
         

@@ -16,6 +16,7 @@
 #include "ignition_module_node.h"
 #include "transmission_node.h"
 #include "vehicle_node.h"
+#include "wankel_engine_node.h"
 
 namespace es_script {
 
@@ -32,7 +33,7 @@ namespace es_script {
         virtual void _evaluate() {
             EngineNode *engineNode = getObject<EngineNode>(m_engineInput);
 
-            Engine *engine = new Engine;
+            Engine *engine = engineNode->createEngine();
             engineNode->buildEngine(engine);
 
             // Only one engine can be simulated at a time
@@ -143,6 +144,50 @@ namespace es_script {
     protected:
         CylinderBankNode *m_cylinderBankNode = nullptr;
         EngineNode *m_engine = nullptr;
+    };
+
+    class AddRotorNode : public Node {
+    public:
+        AddRotorNode() { /* void */ }
+        virtual ~AddRotorNode() { /* void */ }
+
+    protected:
+        virtual void registerInputs() {
+            addInput("engine", &m_engine, InputTarget::Type::Object);
+            addInput("rotor", &m_rotor.rotor, InputTarget::Type::Object);
+            addInput("rod_journal", &m_rotor.rodJournal, InputTarget::Type::Object);
+            addInput("exhaust_system", &m_rotor.exhaust, InputTarget::Type::Object);
+            addInput("intake", &m_rotor.intake, InputTarget::Type::Object);
+            addInput("ignition_wire", &m_ignitionWire, InputTarget::Type::Object);
+            addInput("intake_port", &m_rotor.intakePort, InputTarget::Type::Object);
+            addInput("exhaust_port", &m_rotor.exhaustPort, InputTarget::Type::Object);
+            addInput("sound_attenuation", &m_rotor.soundAttenuation);
+            addInput("primary_length", &m_rotor.primaryLength);
+            addInput("intake_runner_cross_section_area", &m_rotor.intakeRunnerCrossSectionArea);
+            addInput("exhaust_cross_section_area", &m_rotor.exhaustCrossSectionArea);
+            addInput("spark_plug_angle", &m_rotor.sparkPlugAngle);
+
+            Node::registerInputs();
+        }
+
+        virtual void _evaluate() {
+            readAllInputs();
+
+            WankelEngineNode *engine = dynamic_cast<WankelEngineNode *>(m_engine);
+            if (engine == nullptr) {
+                throwError("Rotors can only be added to a wankel_engine");
+                return;
+            }
+
+            engine->addRotor(m_rotor, m_ignitionWire);
+        }
+
+    protected:
+        EngineNode *m_engine = nullptr;
+        IgnitionWireNode *m_ignitionWire = nullptr;
+        WankelEngineNode::Rotor m_rotor = {
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+            1.0, 0.0, 0.0, 0.0, 0.0 };
     };
 
     class AddCylinderNode : public Node {

@@ -232,8 +232,24 @@ void CombustionChamber::update(double dt) {
 
     updateCycleStates();
 
-    m_intakeFlowRate = m_head->intakeFlowRate(m_piston->getCylinderIndex());
-    m_exhaustFlowRate = m_head->exhaustFlowRate(m_piston->getCylinderIndex());
+    m_intakeFlowRate = calculateIntakeFlowRate();
+    m_exhaustFlowRate = calculateExhaustFlowRate();
+}
+
+double CombustionChamber::calculateIntakeFlowRate() const {
+    return m_head->intakeFlowRate(m_piston->getCylinderIndex());
+}
+
+double CombustionChamber::calculateExhaustFlowRate() const {
+    return m_head->exhaustFlowRate(m_piston->getCylinderIndex());
+}
+
+double CombustionChamber::getIntakeOpening() const {
+    return m_head->intakeValveLift(m_piston->getCylinderIndex());
+}
+
+double CombustionChamber::getExhaustOpening() const {
+    return m_head->exhaustValveLift(m_piston->getCylinderIndex());
 }
 
 void CombustionChamber::flow(double dt) {
@@ -408,7 +424,8 @@ void CombustionChamber::updateCycleStates() {
         crankAngle = 0.0;
     }
 
-    const int i = (int)std::round((crankAngle / (4 * constants::pi)) * (StateSamples - 1.0));
+    const double cycleLength = m_engine->getOutputCrankshaft()->getCycleLength();
+    const int i = (int)std::round((crankAngle / cycleLength) * (StateSamples - 1.0));
 
     m_pistonSpeed[i] = std::abs(pistonSpeed());
     m_pressure[i] = m_system.pressure();

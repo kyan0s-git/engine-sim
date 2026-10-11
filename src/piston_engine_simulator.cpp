@@ -124,6 +124,25 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
     m_vehicleDrag.initialize(&m_vehicleMass, m_vehicle);
     m_system->addConstraint(&m_vehicleDrag);
 
+    addEngineParts();
+
+    m_dyno.connectCrankshaft(m_engine->getOutputCrankshaft());
+    m_system->addConstraint(&m_dyno);
+
+    m_starterMotor.connectCrankshaft(m_engine->getOutputCrankshaft());
+    m_starterMotor.m_maxTorque = m_engine->getStarterTorque();
+    m_starterMotor.m_rotationSpeed = -m_engine->getStarterSpeed();
+    m_system->addConstraint(&m_starterMotor);
+
+    placeAndInitialize();
+    initializeSynthesizer();
+}
+
+void PistonEngineSimulator::addEngineParts() {
+    const int cylinderCount = m_engine->getCylinderCount();
+    const double ks = 5000;
+    const double kd = 10;
+
     for (int i = 0; i < cylinderCount; ++i) {
         Piston *piston = m_engine->getPiston(i);
         ConnectingRod *connectingRod = piston->getRod();
@@ -190,17 +209,6 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
         m_system->addConstraint(&m_cylinderWallConstraints[i]);
         m_system->addForceGenerator(m_engine->getChamber(i));
     }
-
-    m_dyno.connectCrankshaft(m_engine->getOutputCrankshaft());
-    m_system->addConstraint(&m_dyno);
-
-    m_starterMotor.connectCrankshaft(m_engine->getOutputCrankshaft());
-    m_starterMotor.m_maxTorque = m_engine->getStarterTorque();
-    m_starterMotor.m_rotationSpeed = -m_engine->getStarterSpeed();
-    m_system->addConstraint(&m_starterMotor);
-
-    placeAndInitialize();
-    initializeSynthesizer();
 }
 
 double PistonEngineSimulator::getAverageOutputSignal() const {
@@ -212,7 +220,7 @@ double PistonEngineSimulator::getAverageOutputSignal() const {
     return sum / m_engine->getExhaustSystemCount();
 }
 
-void PistonEngineSimulator::placeAndInitialize() {
+void PistonEngineSimulator::placeParts() {
     const int cylinderCount = m_engine->getCylinderCount();
     for (int i = 0; i < cylinderCount; ++i) {
         ConnectingRod *rod = m_engine->getConnectingRod(i);
@@ -225,7 +233,12 @@ void PistonEngineSimulator::placeAndInitialize() {
     for (int i = 0; i < cylinderCount; ++i) {
         placeCylinder(i);
     }
+}
 
+void PistonEngineSimulator::placeAndInitialize() {
+    placeParts();
+
+    const int cylinderCount = m_engine->getCylinderCount();
     for (int i = 0; i < cylinderCount; ++i) {
         m_engine->getChamber(i)->m_system.initialize(
             units::pressure(1.0, units::atm),
@@ -303,12 +316,10 @@ void PistonEngineSimulator::simulateStep_() {
     IgnitionModule *im = m_engine->getIgnitionModule();
     im->update(timestep);
 
+    processIgnitionEvents();
+
     const int cylinderCount = m_engine->getCylinderCount();
     for (int i = 0; i < cylinderCount; ++i) {
-        if (im->getIgnitionEvent(i)) {
-            m_engine->getChamber(i)->ignite();
-        }
-
         m_engine->getChamber(i)->update(timestep);
     }
 
@@ -336,6 +347,16 @@ void PistonEngineSimulator::simulateStep_() {
     }
 
     im->resetIgnitionEvents();
+}
+
+void PistonEngineSimulator::processIgnitionEvents() {
+    IgnitionModule *im = m_engine->getIgnitionModule();
+    const int cylinderCount = m_engine->getCylinderCount();
+    for (int i = 0; i < cylinderCount; ++i) {
+        if (im->getIgnitionEvent(i)) {
+            m_engine->getChamber(i)->ignite();
+        }
+    }
 }
 
 double PistonEngineSimulator::getTotalExhaustFlow() const {

@@ -138,7 +138,7 @@ bool Simulator::simulateStep() {
     }
 
     const int index =
-        static_cast<int>(std::floor(DynoTorqueSamples * outputShaft->getCycleAngle() / (4 * constants::pi)));
+        static_cast<int>(std::floor(DynoTorqueSamples * outputShaft->getCycleAngle() / outputShaft->getCycleLength()));
     const int step = m_engine->isSpinningCw() ? 1 : -1;
     m_dynoTorqueSamples[index] = m_dyno.getTorque();
 

@@ -53,14 +53,24 @@ class CombustionChamber : public atg_scs::ForceGenerator {
         void initialize(const Parameters &params);
         void destroy();
         void setEngine(Engine *engine) { m_engine = engine; }
-        virtual void apply(atg_scs::SystemState *system);
+        virtual void apply(atg_scs::SystemState *system) override;
 
         CylinderHead *getCylinderHead() const { return m_head; }
         Piston *getPiston() const { return m_piston; }
 
-        double getFrictionForce() const;
-        double getVolume() const;
-        double pistonSpeed() const;
+        // Geometry dependent functions; overridden by the chambers of engines
+        // that aren't reciprocating piston engines (e.g. rotary engines)
+        virtual double getFrictionForce() const;
+        virtual double getVolume() const;
+        virtual double pistonSpeed() const;
+
+        // Flow coefficients of the intake and exhaust openings
+        virtual double calculateIntakeFlowRate() const;
+        virtual double calculateExhaustFlowRate() const;
+
+        // Current intake/exhaust opening (valve lift for piston engines)
+        virtual double getIntakeOpening() const;
+        virtual double getExhaustOpening() const;
         double calculateMeanPistonSpeed() const;
         double calculateFiringPressure() const;
 

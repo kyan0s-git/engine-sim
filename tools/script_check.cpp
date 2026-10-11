@@ -12,6 +12,7 @@
 #include "../include/simulator.h"
 #include "../include/transmission.h"
 #include "../include/vehicle.h"
+#include "../include/wankel_engine.h"
 #include "../include/units.h"
 #include "../scripting/include/compiler.h"
 
@@ -32,6 +33,7 @@ namespace {
         std::string dataRoot;
         double simulateSeconds = 3.0;
         bool requireRunning = false;
+        bool trace = false;
         std::vector<std::string> scripts;
     };
 
@@ -126,10 +128,14 @@ namespace {
         }
 
         engine->calculateDisplacement();
-        std::printf("  engine: %s (%.2f L, %d cylinders)\n",
+        const WankelEngine *wankel = dynamic_cast<const WankelEngine *>(engine);
+        std::printf("  engine: %s (%.2f L, %d %s)\n",
             engine->getName().c_str(),
             units::convert(engine->getDisplacement(), units::L),
-            engine->getCylinderCount());
+            wankel != nullptr ? wankel->getRotorCount() : engine->getCylinderCount(),
+            wankel != nullptr
+                ? (wankel->getRotorCount() == 1 ? "rotor" : "rotors")
+                : "cylinders");
 
         Simulator *simulator = engine->createSimulator(vehicle, transmission);
         simulator->setSimulationFrequency(static_cast<int>(engine->getSimulationFrequency()));
@@ -168,6 +174,28 @@ namespace {
             }
 
             peakRpm = std::max(peakRpm, rpm);
+
+            if (options.trace) {
+                CombustionChamber *chamber = engine->getChamber(0);
+                std::printf(
+                    "  t=%.3f rpm=%.0f V0=%.1fcc p0=%.1fkPa T0=%.0fK lit0=%d "
+                    "map=%.1fkPa in0=%.3f ex0=%.3f fuel=%.4f o2=%.3f plenum_o2=%.3f "
+                    "qin=%.2e qex=%.2e\n",
+                    t,
+                    rpm,
+                    units::convert(chamber->getVolume(), units::cc),
+                    units::convert(chamber->m_system.pressure(), units::kPa),
+                    chamber->m_system.temperature(),
+                    chamber->isLit() ? 1 : 0,
+                    units::convert(engine->getManifoldPressure(), units::kPa),
+                    chamber->getIntakeOpening(),
+                    chamber->getExhaustOpening(),
+                    chamber->m_system.mix().p_fuel,
+                    chamber->m_system.mix().p_o2,
+                    engine->getIntake(0)->m_system.mix().p_o2,
+                    chamber->getLastTimestepIntakeFlow(),
+                    chamber->getLastTimestepExhaustFlow());
+            }
         }
 
         const double finalRpm = engine->getRpm();
@@ -208,9 +236,10 @@ int main(int argc, char *argv[]) {
         if (arg == "--data" && i + 1 < argc) options.dataRoot = argv[++i];
         else if (arg == "--seconds" && i + 1 < argc) options.simulateSeconds = std::atof(argv[++i]);
         else if (arg == "--require-running") options.requireRunning = true;
+        else if (arg == "--trace") options.trace = true;
         else if (arg == "--help" || arg == "-h") {
             std::printf(
-                "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] <script.mr>...\n",
+                "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] [--trace] <script.mr>...\n",
                 argv[0]);
             return 0;
         }
