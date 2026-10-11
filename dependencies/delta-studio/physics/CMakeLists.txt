@@ -1,0 +1,7 @@
+file(GLOB DELTA_PHYSICS_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB DELTA_PHYSICS_HEADERS CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
+
+add_library(delta-physics STATIC ${DELTA_PHYSICS_SOURCES} ${DELTA_PHYSICS_HEADERS})
+target_link_libraries(delta-physics PUBLIC delta-core)

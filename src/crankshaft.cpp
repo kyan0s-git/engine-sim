@@ -15,6 +15,7 @@ Crankshaft::Crankshaft() {
     m_p_x = m_p_y = 0.0;
     m_tdc = 0.0;
     m_frictionTorque = 0.0;
+    m_cycleLength = 4 * constants::pi;
 }
 
 Crankshaft::~Crankshaft() {
@@ -56,7 +57,7 @@ void Crankshaft::getRodJournalPositionGlobal(int i, double *x, double *y) {
 }
 
 void Crankshaft::resetAngle() {
-    m_body.theta = std::fmod(m_body.theta, 4 * constants::pi);
+    m_body.theta = std::fmod(m_body.theta, m_cycleLength);
 }
 
 void Crankshaft::setRodJournalAngle(int i, double angle) {
@@ -70,8 +71,8 @@ double Crankshaft::getAngle() const {
 }
 
 double Crankshaft::getCycleAngle(double offset) {
-    const double wrapped = std::fmod(-getAngle() + offset, 4 * constants::pi);
+    const double wrapped = std::fmod(-getAngle() + offset, m_cycleLength);
     return (wrapped < 0)
-        ? wrapped + 4 * constants::pi
+        ? wrapped + m_cycleLength
         : wrapped;
 }

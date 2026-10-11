@@ -34,6 +34,11 @@ class Crankshaft : public Part {
         double getAngle() const;
         double getCycleAngle(double offset = 0.0);
 
+        // Angle the crankshaft turns through during one complete engine
+        // cycle: 4*pi for four-stroke piston engines, 6*pi for rotary engines
+        inline double getCycleLength() const { return m_cycleLength; }
+        inline void setCycleLength(double length) { m_cycleLength = length; }
+
         inline double getTdc() const { return m_tdc; }
         inline double getThrow() const { return m_throw; }
         inline double getMass() const { return m_m; }
@@ -55,6 +60,7 @@ class Crankshaft : public Part {
         double m_p_x;
         double m_p_y;
         double m_frictionTorque;
+        double m_cycleLength;
 };
 
 #endif /* ATG_ENGINE_SIM_CRANKSHAFT_H */

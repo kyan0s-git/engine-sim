@@ -135,16 +135,16 @@ ConnectingRod *es_script::EngineContext::getConnectingRod(
 }
 
 void es_script::EngineContext::setCylinderIndex(
-    const CylinderBankNode *bank,
+    const void *owner,
     int localIndex,
     int globalIndex)
 {
-    m_cylinderIndices[{ bank, localIndex }] = globalIndex;
+    m_cylinderIndices[{ owner, localIndex }] = globalIndex;
 }
 
 int es_script::EngineContext::getCylinderIndex(
-    const CylinderBankNode *bank,
+    const void *owner,
     int localIndex) const
 {
-    return m_cylinderIndices.at({ bank, localIndex });
+    return m_cylinderIndices.at({ owner, localIndex });
 }

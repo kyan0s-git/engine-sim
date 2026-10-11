@@ -449,7 +449,11 @@ private node corvette_transmission {
 }
 
 public node main {
-    set_engine(ls_v8())
-    set_vehicle(corvette())
-    set_transmission(corvette_transmission())
+    run(
+        engine: ls_v8(),
+        transmission: corvette_transmission(),
+        vehicle: corvette()
+    )
 }
+
+main()

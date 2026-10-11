@@ -41,6 +41,10 @@ namespace es_script {
                 }
 
                 context->addFunction(this, function);
+                if (context->getEngine() != nullptr) {
+                    context->getEngine()->addOwnedObject(function);
+                }
+
                 return function;
             }
         }

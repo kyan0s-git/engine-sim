@@ -182,6 +182,16 @@ public:
     bool generateIsoscelesTriangle(
         float x, float y, float width, float height);
 
+    // Triangle fan around a center point (for star-shaped polygons)
+    bool generateFilledPolygon2d(
+        const float *x, const float *y, int n, float center_x, float center_y);
+
+    // Band of quads between two polylines with the same number of points
+    bool generateStrip2d(
+        const float *x0, const float *y0,
+        const float *x1, const float *y1,
+        int n, bool closed);
+
     bool startPath(PathParameters &params);
     bool generatePathSegment(PathParameters &params, bool detached = false);
 

@@ -1,8 +1,17 @@
 # Ignore user's workspace
 workspace/
 
-# Build directory
+# Build directories
 build/
+build-*/
+out/
+cmake-build-*/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+*.user
 
 # clangd cache and code completion files
 .cache
@@ -10,3 +19,7 @@ compile_commands.json
 
 # Blender temporary files
 *.blend1
+
+# Runtime output
+error_log.log
+*.tmp

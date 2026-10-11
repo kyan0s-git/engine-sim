@@ -7,6 +7,8 @@
 #include "function.h"
 #include "units.h"
 
+#include <vector>
+
 class IgnitionModule : public Part {
     public:
         struct Parameters {
@@ -18,7 +20,9 @@ class IgnitionModule : public Part {
         };
 
         struct SparkPlug {
-            double angle = 0;
+            // A plug can fire more than once per cycle (e.g. a rotary engine's
+            // plug fires once per eccentric shaft revolution)
+            std::vector<double> angles;
             bool ignitionEvent = false;
             bool enabled = false;
         };
@@ -30,6 +34,7 @@ class IgnitionModule : public Part {
         virtual void destroy();
 
         void initialize(const Parameters &params);
+        // Adds a firing angle (crankshaft cycle angle) for the given plug
         void setFiringOrder(int cylinderIndex, double angle);
         void reset();
         void update(double dt);

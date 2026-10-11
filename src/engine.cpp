@@ -1,4 +1,3 @@
-#include "..\include\engine.h"
 #include "../include/engine.h"
 
 #include "../include/constants.h"
@@ -6,6 +5,8 @@
 #include "../include/fuel.h"
 #include "../include/piston_engine_simulator.h"
 
+#include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <assert.h>
 
@@ -40,6 +41,11 @@ Engine::Engine() {
     m_initialHighFrequencyGain = 0.01;
     m_initialJitter = 0.5;
     m_initialNoise = 1.0;
+    m_initialConvolution = 1.0;
+    m_maxSleSolverSteps = 128;
+    m_fluidSimulationSteps = 8;
+    m_heatTransferCoefficient = 100.0;
+    m_blockTemperature = units::celcius(90.0);
 }
 
 Engine::~Engine() {
@@ -71,6 +77,11 @@ void Engine::initialize(const Parameters &params) {
     m_initialSimulationFrequency = params.initialSimulationFrequency;
     m_initialJitter = params.initialJitter;
     m_initialNoise = params.initialNoise;
+    m_initialConvolution = params.initialConvolution;
+    m_maxSleSolverSteps = std::max(1, params.maxSleSolverSteps);
+    m_fluidSimulationSteps = std::max(1, params.fluidSimulationSteps);
+    m_heatTransferCoefficient = params.heatTransferCoefficient;
+    m_blockTemperature = params.blockTemperature;
 
     m_crankshafts = new Crankshaft[m_crankshaftCount];
     m_cylinderBanks = new CylinderBank[m_cylinderBankCount];
@@ -79,15 +90,20 @@ void Engine::initialize(const Parameters &params) {
     m_connectingRods = new ConnectingRod[m_cylinderCount];
     m_exhaustSystems = new ExhaustSystem[m_exhaustSystemCount];
     m_intakes = new Intake[m_intakeCount];
-    m_combustionChambers = new CombustionChamber[m_cylinderCount];
+    m_combustionChambers = new CombustionChamber *[m_cylinderCount];
 
     for (int i = 0; i < m_exhaustSystemCount; ++i) {
         m_exhaustSystems[i].m_index = i;
     }
 
     for (int i = 0; i < m_cylinderCount; ++i) {
-        m_combustionChambers[i].setEngine(this);
+        m_combustionChambers[i] = createCombustionChamber(i);
+        m_combustionChambers[i]->setEngine(this);
     }
+}
+
+CombustionChamber *Engine::createCombustionChamber(int index) {
+    return new CombustionChamber;
 }
 
 void Engine::destroy() {
@@ -98,7 +114,13 @@ void Engine::destroy() {
     for (int i = 0; i < m_cylinderCount; ++i) {
         m_pistons[i].destroy();
         m_connectingRods[i].destroy();
-        m_combustionChambers[i].destroy();
+        m_combustionChambers[i]->destroy();
+        delete m_combustionChambers[i];
+    }
+
+    for (int i = 0; i < m_cylinderBankCount; ++i) {
+        m_heads[i].destroy();
+        m_cylinderBanks[i].destroy();
     }
 
     for (int i = 0; i < m_exhaustSystemCount; ++i) {
@@ -130,6 +152,12 @@ void Engine::destroy() {
     m_intakes = nullptr;
     m_combustionChambers = nullptr;
     m_throttle = nullptr;
+
+    for (auto it = m_ownedObjects.rbegin(); it != m_ownedObjects.rend(); ++it) {
+        it->second(it->first);
+    }
+
+    m_ownedObjects.clear();
 }
 
 Crankshaft *Engine::getOutputCrankshaft() const {
@@ -237,13 +265,8 @@ void Engine::calculateDisplacement() {
     // numerical approximation.
     constexpr int Resolution = 1000;
 
-    double *min_s = new double[m_cylinderCount];
-    double *max_s = new double[m_cylinderCount];
-
-    for (int i = 0; i < m_cylinderCount; ++i) {
-        min_s[i] = DBL_MAX;
-        max_s[i] = -DBL_MAX;
-    }
+    std::vector<double> min_s(m_cylinderCount, DBL_MAX);
+    std::vector<double> max_s(m_cylinderCount, -DBL_MAX);
 
     for (int j = 0; j < Resolution; ++j) {
         const double crankshaftAngle = 2 * (j / static_cast<double>(Resolution)) * constants::pi;
@@ -390,7 +413,8 @@ Simulator *Engine::createSimulator(Vehicle *vehicle, Transmission *transmission)
     simulator->initialize(simulatorParams);
 
     simulator->loadSimulation(this, vehicle, transmission);
-    simulator->setFluidSimulationSteps(8);
+    simulator->setFluidSimulationSteps(m_fluidSimulationSteps);
+    simulator->setMaxSleSolverSteps(m_maxSleSolverSteps);
 
     return static_cast<Simulator *>(simulator);
 }

@@ -34,6 +34,7 @@ namespace es_script {
             addInput("primary_flow_rate", &m_parameters.primaryFlowRate);
             addInput("audio_volume", &m_parameters.audioVolume);
             addInput("velocity_decay", &m_parameters.velocityDecay);
+            addInput("backflow_atmospheric_mixing", &m_parameters.backflowAtmosphericMixing);
             addInput("impulse_response", &m_impulseResponse, InputTarget::Type::Object);
 
             ObjectReferenceNode<ExhaustSystemNode>::registerInputs();

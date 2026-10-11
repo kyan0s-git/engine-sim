@@ -16,6 +16,7 @@
 #include "ignition_module_node.h"
 #include "transmission_node.h"
 #include "vehicle_node.h"
+#include "wankel_engine_node.h"
 
 namespace es_script {
 
@@ -32,8 +33,16 @@ namespace es_script {
         virtual void _evaluate() {
             EngineNode *engineNode = getObject<EngineNode>(m_engineInput);
 
-            Engine *engine = new Engine;
+            Engine *engine = engineNode->createEngine();
             engineNode->buildEngine(engine);
+
+            // Only one engine can be simulated at a time
+            Engine *previous = Compiler::output()->engine;
+            if (previous != nullptr) {
+                previous->destroy();
+                delete previous;
+            }
+
             Compiler::output()->engine = engine;
         }
 
@@ -135,6 +144,50 @@ namespace es_script {
     protected:
         CylinderBankNode *m_cylinderBankNode = nullptr;
         EngineNode *m_engine = nullptr;
+    };
+
+    class AddRotorNode : public Node {
+    public:
+        AddRotorNode() { /* void */ }
+        virtual ~AddRotorNode() { /* void */ }
+
+    protected:
+        virtual void registerInputs() {
+            addInput("engine", &m_engine, InputTarget::Type::Object);
+            addInput("rotor", &m_rotor.rotor, InputTarget::Type::Object);
+            addInput("rod_journal", &m_rotor.rodJournal, InputTarget::Type::Object);
+            addInput("exhaust_system", &m_rotor.exhaust, InputTarget::Type::Object);
+            addInput("intake", &m_rotor.intake, InputTarget::Type::Object);
+            addInput("ignition_wire", &m_ignitionWire, InputTarget::Type::Object);
+            addInput("intake_port", &m_rotor.intakePort, InputTarget::Type::Object);
+            addInput("exhaust_port", &m_rotor.exhaustPort, InputTarget::Type::Object);
+            addInput("sound_attenuation", &m_rotor.soundAttenuation);
+            addInput("primary_length", &m_rotor.primaryLength);
+            addInput("intake_runner_cross_section_area", &m_rotor.intakeRunnerCrossSectionArea);
+            addInput("exhaust_cross_section_area", &m_rotor.exhaustCrossSectionArea);
+            addInput("spark_plug_angle", &m_rotor.sparkPlugAngle);
+
+            Node::registerInputs();
+        }
+
+        virtual void _evaluate() {
+            readAllInputs();
+
+            WankelEngineNode *engine = dynamic_cast<WankelEngineNode *>(m_engine);
+            if (engine == nullptr) {
+                throwError("Rotors can only be added to a wankel_engine");
+                return;
+            }
+
+            engine->addRotor(m_rotor, m_ignitionWire);
+        }
+
+    protected:
+        EngineNode *m_engine = nullptr;
+        IgnitionWireNode *m_ignitionWire = nullptr;
+        WankelEngineNode::Rotor m_rotor = {
+            nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+            1.0, 0.0, 0.0, 0.0, 0.0 };
     };
 
     class AddCylinderNode : public Node {
@@ -268,19 +321,22 @@ namespace es_script {
         CylinderBankNode *m_bank = nullptr;
     };
 
-    class k_28inH2ONode : public Node {
-        class k_28inH2ONodeOutput : public piranha::NodeOutput {
+    // Converts a flow rate measured on a flow bench (in SCFM) into the
+    // simulator's flow constant. The test conditions are given by `Function`.
+    template <double (*Function)(double)>
+    class FlowConstantNode : public Node {
+        class FlowConstantNodeOutput : public piranha::NodeOutput {
         public:
-            k_28inH2ONodeOutput() : NodeOutput(&piranha::FundamentalType::FloatType) {
+            FlowConstantNodeOutput() : NodeOutput(&piranha::FundamentalType::FloatType) {
                 m_input = 0.0;
             }
 
-            virtual ~k_28inH2ONodeOutput() {
+            virtual ~FlowConstantNodeOutput() {
                 /* void */
             }
 
             virtual void fullCompute(void *target) const {
-                *reinterpret_cast<double *>(target) = GasSystem::k_28inH2O(m_input);
+                *reinterpret_cast<double *>(target) = Function(m_input);
             }
 
             double getInput() const { return m_input; }
@@ -291,8 +347,8 @@ namespace es_script {
         };
 
     public:
-        k_28inH2ONode() { /* void */ }
-        virtual ~k_28inH2ONode() { /* void */ }
+        FlowConstantNode() { /* void */ }
+        virtual ~FlowConstantNode() { /* void */ }
 
     protected:
         virtual void registerInputs() {
@@ -314,59 +370,13 @@ namespace es_script {
         }
 
     protected:
-        k_28inH2ONodeOutput m_output;
+        FlowConstantNodeOutput m_output;
         double m_flowInput = 0.0;
     };
 
-    class k_CarbNode : public Node {
-        class k_CarbNodeOutput : public piranha::NodeOutput {
-        public:
-            k_CarbNodeOutput() : NodeOutput(&piranha::FundamentalType::FloatType) {
-                m_input = 0.0;
-            }
-
-            virtual ~k_CarbNodeOutput() {
-                /* void */
-            }
-
-            virtual void fullCompute(void *target) const {
-                *reinterpret_cast<double *>(target) = GasSystem::k_carb(m_input);
-            }
-
-            double getInput() const { return m_input; }
-            void setInput(double data) { m_input = data; }
-
-        protected:
-            double m_input;
-        };
-
-    public:
-        k_CarbNode() { /* void */ }
-        virtual ~k_CarbNode() { /* void */ }
-
-    protected:
-        virtual void registerInputs() {
-            addInput("flow", &m_flowInput);
-
-            Node::registerInputs();
-        }
-
-        virtual void registerOutputs() {
-            registerOutput(&m_output, "__out");
-
-            setPrimaryOutput("__out");
-        }
-
-        virtual void _evaluate() {
-            readAllInputs();
-
-            m_output.setInput(m_flowInput);
-        }
-
-    protected:
-        k_CarbNodeOutput m_output;
-        double m_flowInput = 0.0;
-    };
+    using k_28inH2ONode = FlowConstantNode<&GasSystem::k_28inH2O>;
+    using k_32inH2ONode = FlowConstantNode<&GasSystem::k_32inH2O>;
+    using k_CarbNode = FlowConstantNode<&GasSystem::k_carb>;
 
     class ConnectIgnitionWireNode : public Node {
     public:
@@ -506,11 +516,13 @@ namespace es_script {
             Node::registerInputs();
         }
 
-        virtual void _evaluate() {
+        virtual void _evaluate() override {
             readAllInputs();
 
             Transmission *transmission = new Transmission;
             m_transmission->generate(transmission);
+
+            delete Compiler::output()->transmission;
             Compiler::output()->transmission = transmission;
         }
 
@@ -535,6 +547,8 @@ namespace es_script {
 
             Vehicle *vehicle = new Vehicle;
             vehicleNode->generate(vehicle);
+
+            delete Compiler::output()->vehicle;
             Compiler::output()->vehicle = vehicle;
         }
 
@@ -575,6 +589,7 @@ namespace es_script {
             readAllInputs();
 
             Compiler::output()->applicationSettings = m_settings;
+            Compiler::output()->applicationSettingsSet = true;
         }
 
     protected:

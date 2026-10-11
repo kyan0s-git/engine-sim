@@ -53,7 +53,20 @@ void VehicleDragConstraint::calculate(Output *output, atg_scs::SystemState *syst
     const double A = m_vehicle->getCrossSectionArea();
     const double rollingResistance = m_vehicle->getRollingResistance();
 
-    output->limits[0][0] =
-        -m_vehicle->linearForceToVirtualTorque(rollingResistance + 0.5 * airDensity * v_squared * c_d * A);
-    output->limits[0][1] = 0;
+    // Resistive forces always oppose the direction of travel. Previously the
+    // limits only allowed a negative torque so vehicles driven by engines
+    // spinning counter-clockwise experienced no drag at all.
+    const double resistance = m_vehicle->linearForceToVirtualTorque(
+        rollingResistance
+        + 0.5 * airDensity * v_squared * c_d * A
+        + m_vehicle->getBrakeForce());
+
+    if (m_bodies[0]->v_theta >= 0) {
+        output->limits[0][0] = -resistance;
+        output->limits[0][1] = 0;
+    }
+    else {
+        output->limits[0][0] = 0;
+        output->limits[0][1] = resistance;
+    }
 }

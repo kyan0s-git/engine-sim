@@ -1,0 +1,18 @@
+module {
+    @name:      "Engine Simulator Theme Library"
+    @author:    "ATG (Ange Yaghi)"
+    @copyright: "Copyright 2022, Ange Yaghi"
+}
+
+// Lightweight library for theme scripts; only includes what is needed to
+// change the application settings (much faster to compile than the full
+// engine_sim.mr library)
+
+public import "types/atomic_types.mr"
+public import "types/conversions.mr"
+public import "types/operations.mr"
+
+public import "constants/constants.mr"
+public import "constants/units.mr"
+
+public import "settings/application_settings.mr"

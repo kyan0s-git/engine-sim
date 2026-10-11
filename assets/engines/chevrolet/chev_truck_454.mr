@@ -226,3 +226,48 @@ public node chev_truck_454 {
         )
     )
 }
+
+// Heavy pickup truck. Drivetrain flex is enabled to demonstrate the axle and
+// clutch compliance model: try launching it hard with [Shift] + [Space].
+private node pickup_truck {
+    alias output __out:
+        vehicle(
+            mass: 2300 * units.kg,
+            drag_coefficient: 0.45,
+            cross_sectional_area: (78 * units.inch) * (72 * units.inch),
+            diff_ratio: 3.73,
+            tire_radius: 15 * units.inch,
+            rolling_resistance: 400 * units.N,
+            stiffness: 40 * units.lb_ft / units.deg,
+            damping: 12.0,
+            max_flex: 8 * units.deg,
+            limit_flex: true,
+            simulate_flex: true
+        );
+}
+
+private node pickup_transmission {
+    alias output __out:
+        transmission(
+            max_clutch_torque: 650 * units.lb_ft,
+            max_clutch_flex: 6 * units.deg,
+            limit_clutch_flex: true,
+            clutch_stiffness: 60 * units.lb_ft / units.deg,
+            clutch_damping: 2.0,
+            simulate_flex: true
+        )
+        .add_gear(3.06)
+        .add_gear(1.63)
+        .add_gear(1.00)
+        .add_gear(0.70);
+}
+
+public node main {
+    run(
+        engine: chev_truck_454(),
+        transmission: pickup_transmission(),
+        vehicle: pickup_truck()
+    )
+}
+
+main()

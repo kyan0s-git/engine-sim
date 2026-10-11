@@ -17,13 +17,14 @@ namespace es_script {
         virtual Valvetrain *generate(
             EngineContext *context,
             Crankshaft *crank) override {
-            VtecValvetrain *valvetrain = new VtecValvetrain;
+            Engine *engine = context->getEngine();
+            VtecValvetrain *valvetrain = engine->addOwnedObject(new VtecValvetrain);
 
             Camshaft
-                *intakeCam = new Camshaft(),
-                *exhaustCam = new Camshaft(),
-                *vtecIntakeCam = new Camshaft(),
-                *vtecExhaustCam = new Camshaft();
+                *intakeCam = engine->addOwnedObject(new Camshaft()),
+                *exhaustCam = engine->addOwnedObject(new Camshaft()),
+                *vtecIntakeCam = engine->addOwnedObject(new Camshaft()),
+                *vtecExhaustCam = engine->addOwnedObject(new Camshaft());
 
             m_intakeCamshaft->generate(intakeCam, crank, context);
             m_exhaustCamshaft->generate(exhaustCam, crank, context);
@@ -46,7 +47,7 @@ namespace es_script {
         }
 
     protected:
-        virtual void registerInputs() {
+        virtual void registerInputs() override {
             addInput("vtec_intake_camshaft", &m_vtecIntakeCamshaft, InputTarget::Type::Object);
             addInput("vtec_exhaust_camshaft", &m_vtecExhaustCamshaft, InputTarget::Type::Object);
             addInput("intake_camshaft", &m_intakeCamshaft, InputTarget::Type::Object);

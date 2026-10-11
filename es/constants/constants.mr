@@ -8,5 +8,5 @@ private import "../types/atomic_types.mr"
 private import "../types/conversions.mr"
 
 public node constants {
-    output pi: 3.14159265359;
+    output pi: 3.14159265358979;
 }

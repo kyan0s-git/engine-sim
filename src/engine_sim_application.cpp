@@ -13,18 +13,84 @@
 #include "../include/exhaust_system.h"
 #include "../include/feedback_comb_filter.h"
 #include "../include/utilities.h"
+#include "../include/piston_engine_simulator.h"
+#include "../include/wankel_engine.h"
+#include "../include/wankel_rotor_object.h"
 
+#ifdef ATG_ENGINE_SIM_PIRANHA_ENABLED
 #include "../scripting/include/compiler.h"
+#endif /* ATG_ENGINE_SIM_PIRANHA_ENABLED */
 
+#include "build_info.h"
+
+#include <delta-studio/include/yds_error_handler.h>
+#include <delta-studio/include/yds_error_system.h>
+
+#include <SDL.h>
+
+#include <algorithm>
 #include <chrono>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 
-#if ATG_ENGINE_SIM_DISCORD_ENABLED
-#include "../discord/Discord.h"
+#ifdef ATG_ENGINE_SIM_DISCORD_ENABLED
+#include <Discord.h>
 #endif
 
-std::string EngineSimApplication::s_buildVersion = "0.1.12a";
+std::string EngineSimApplication::s_buildVersion = ENGINE_SIM_VERSION;
+
+namespace {
+
+    namespace fs = std::filesystem;
+
+    bool isDataRoot(const fs::path &path) {
+        std::error_code ec;
+        return fs::is_directory(path / "assets", ec) && fs::is_directory(path / "es", ec);
+    }
+
+    std::string normalizePath(const fs::path &path) {
+        std::error_code ec;
+        const fs::path canonical = fs::weakly_canonical(path, ec);
+        return (ec ? path : canonical).lexically_normal().string();
+    }
+
+    bool fileExists(const std::string &path) {
+        std::error_code ec;
+        return !path.empty() && fs::is_regular_file(fs::path(path), ec);
+    }
+
+    // Reports errors raised inside of the rendering/platform layer
+    class LoggingErrorHandler : public ysErrorHandler {
+    public:
+        static std::string s_lastError;
+
+        virtual void OnErrorMessage(
+            ysError error,
+            unsigned int line,
+            ysObject *object,
+            const char *file,
+            const char *msg) override
+        {
+            (void)object;
+
+            std::stringstream ss;
+            ss << "error " << static_cast<int>(error)
+                << " (" << fs::path(file).filename().string() << ":" << line << ")";
+            if (msg != nullptr && msg[0] != '\0') {
+                ss << ": " << msg;
+            }
+
+            s_lastError = ss.str();
+            std::fprintf(stderr, "[engine-sim] %s\n", s_lastError.c_str());
+        }
+    };
+
+    std::string LoggingErrorHandler::s_lastError;
+
+} /* namespace */
 
 EngineSimApplication::EngineSimApplication() {
     m_assetPath = "";
@@ -67,6 +133,8 @@ EngineSimApplication::EngineSimApplication() {
     m_loadSimulationCluster = nullptr;
     m_mixerCluster = nullptr;
     m_infoCluster = nullptr;
+    m_console = nullptr;
+    m_showConsole = false;
     m_iceEngine = nullptr;
     m_mainRenderTarget = nullptr;
 
@@ -88,27 +156,20 @@ EngineSimApplication::~EngineSimApplication() {
     /* void */
 }
 
-void EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI api) {
-    dbasic::Path modulePath = dbasic::GetModulePath();
-    dbasic::Path confPath = modulePath.Append("delta.conf");
-
-    std::string enginePath = "../dependencies/submodules/delta-studio/engines/basic";
-    m_assetPath = "../assets";
-    if (confPath.Exists()) {
-        std::fstream confFile(confPath.ToString(), std::ios::in);
-
-        std::getline(confFile, enginePath);
-        std::getline(confFile, m_assetPath);
-        enginePath = modulePath.Append(enginePath).ToString();
-        m_assetPath = modulePath.Append(m_assetPath).ToString();
-
-        confFile.close();
+bool EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI api) {
+    static LoggingErrorHandler *errorHandler = nullptr;
+    if (errorHandler == nullptr) {
+        ysErrorSystem::GetInstance()->AttachErrorHandler(&errorHandler);
     }
 
-    m_engine.GetConsole()->SetDefaultFontDirectory(enginePath + "/fonts/");
+    if (!resolveDataPaths()) {
+        return false;
+    }
 
-    const std::string shaderPath = enginePath + "/shaders/";
-    const std::string winTitle = "Engine Sim | AngeTheGreat | v" + s_buildVersion;
+    m_engine.GetConsole()->SetDefaultFontDirectory(m_deltaPath + "/fonts/");
+
+    const std::string shaderPath = m_deltaPath + "/shaders/";
+    const std::string winTitle = "Engine Simulator | v" + s_buildVersion;
     dbasic::DeltaEngine::GameEngineSettings settings;
     settings.API = api;
     settings.DepthBuffer = false;
@@ -118,10 +179,28 @@ void EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI
     settings.WindowPositionX = 0;
     settings.WindowPositionY = 0;
     settings.WindowStyle = ysWindow::WindowStyle::Windowed;
-    settings.WindowWidth = 1920;
-    settings.WindowHeight = 1080;
 
-    m_engine.CreateGameWindow(settings);
+    // Size the window to comfortably fit on the primary display
+    SDL_InitSubSystem(SDL_INIT_VIDEO);
+    SDL_Rect usableBounds;
+    if (SDL_GetDisplayUsableBounds(0, &usableBounds) == 0 && usableBounds.w > 0 && usableBounds.h > 0) {
+        settings.WindowWidth = std::min(1920, static_cast<int>(usableBounds.w * 0.9));
+        settings.WindowHeight = std::min(1080, static_cast<int>(usableBounds.h * 0.9));
+    }
+    else {
+        settings.WindowWidth = 1600;
+        settings.WindowHeight = 900;
+    }
+
+    const ysError windowError = m_engine.CreateGameWindow(settings);
+    SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    if (windowError != ysError::None || m_engine.GetGameWindow() == nullptr) {
+        m_startupError =
+            "Could not create the application window or OpenGL 4.1+ context.\n\n"
+            + LoggingErrorHandler::s_lastError + "\n" + std::string(SDL_GetError())
+            + "\n\nMake sure your graphics drivers are up to date.";
+        return false;
+    }
 
     m_engine.GetDevice()->CreateSubRenderTarget(
         &m_mainRenderTarget,
@@ -153,18 +232,184 @@ void EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI
     m_geometryGenerator.initialize(100000, 200000);
 
     initialize();
+
+    return true;
+}
+
+bool EngineSimApplication::resolveDataPaths() {
+    const fs::path modulePath = fs::path(dbasic::GetModulePath().ToString());
+
+    // Candidate locations for the directory containing assets/ and es/, in
+    // order of priority
+    std::vector<fs::path> candidates;
+    if (!m_startupOptions.dataRoot.empty()) {
+        candidates.push_back(m_startupOptions.dataRoot);
+    }
+
+    const char *envDataRoot = std::getenv("ENGINE_SIM_DATA_ROOT");
+    if (envDataRoot != nullptr && envDataRoot[0] != '\0') {
+        candidates.push_back(envDataRoot);
+    }
+
+    // Legacy configuration file placed next to the executable. The second
+    // line contains the asset directory relative to the executable.
+    const fs::path confPath = modulePath / "delta.conf";
+    if (fileExists(confPath.string())) {
+        std::ifstream confFile(confPath);
+        std::string legacyEnginePath, legacyAssetPath;
+        std::getline(confFile, legacyEnginePath);
+        std::getline(confFile, legacyAssetPath);
+        if (!legacyAssetPath.empty()) {
+            candidates.push_back((modulePath / legacyAssetPath).parent_path());
+        }
+    }
+
+    candidates.push_back(modulePath.parent_path());                 // <root>/bin/app
+    candidates.push_back(modulePath);                               // <root>/app
+    candidates.push_back(modulePath.parent_path() / "Resources");   // macOS bundle
+    candidates.push_back(fs::current_path().parent_path());
+    candidates.push_back(fs::current_path());
+    candidates.push_back(ENGINE_SIM_SOURCE_DIR);                     // Development build
+
+    for (const fs::path &candidate : candidates) {
+        if (isDataRoot(candidate)) {
+            m_dataRoot = normalizePath(candidate);
+            break;
+        }
+    }
+
+    if (m_dataRoot.empty()) {
+        m_startupError =
+            "Could not find the Engine Simulator data files (the 'assets' and 'es' folders). "
+            "Keep the executable inside the 'bin' folder of the extracted release, or pass "
+            "--data <directory> on the command line.";
+        return false;
+    }
+
+    // Fonts and shaders used by the rendering engine
+    const fs::path deltaCandidates[] = {
+        fs::path(m_dataRoot) / "delta",
+        fs::path(m_dataRoot) / "dependencies" / "delta-studio" / "engines" / "basic",
+        fs::path(ENGINE_SIM_SOURCE_DIR) / "dependencies" / "delta-studio" / "engines" / "basic"
+    };
+
+    for (const fs::path &candidate : deltaCandidates) {
+        std::error_code ec;
+        if (fs::is_directory(candidate / "shaders", ec) && fs::is_directory(candidate / "fonts", ec)) {
+            m_deltaPath = normalizePath(candidate);
+            break;
+        }
+    }
+
+    if (m_deltaPath.empty()) {
+        m_startupError = "Could not find the rendering engine's fonts and shaders under '" + m_dataRoot + "'.";
+        return false;
+    }
+
+    m_assetPath = (fs::path(m_dataRoot) / "assets").string();
+
+    std::printf("Engine Simulator %s\n  data: %s\n  rendering engine: %s\n",
+        s_buildVersion.c_str(), m_dataRoot.c_str(), m_deltaPath.c_str());
+
+    // Per-user writable location for logs and session information
+    char *prefPath = SDL_GetPrefPath("EngineSimulator", "engine-sim");
+    if (prefPath != nullptr) {
+        m_userDataPath = prefPath;
+        SDL_free(prefPath);
+    }
+    else {
+        m_userDataPath = m_dataRoot;
+    }
+
+    std::printf("  user data: %s\n", m_userDataPath.c_str());
+    std::fflush(stdout);
+
+    return true;
+}
+
+std::vector<std::string> EngineSimApplication::getScriptSearchPaths() const {
+    std::vector<std::string> paths;
+
+    if (!m_engineScriptPath.empty()) {
+        paths.push_back(fs::path(m_engineScriptPath).parent_path().string() + "/");
+    }
+
+    paths.push_back((fs::path(m_userDataPath) / "assets").string() + "/");
+    paths.push_back((fs::path(m_dataRoot) / "assets").string() + "/");
+    paths.push_back((fs::path(m_dataRoot) / "es").string() + "/");
+
+    return paths;
+}
+
+void EngineSimApplication::loadSession() {
+    const fs::path sessionPath = fs::path(m_userDataPath) / "session.ini";
+
+    std::ifstream file(sessionPath);
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+
+        const size_t eq = line.find('=');
+        if (eq == std::string::npos) continue;
+
+        const std::string key = line.substr(0, eq);
+        const std::string value = line.substr(eq + 1);
+
+        if (key == "engine" && fileExists(value)) m_engineScriptPath = value;
+        else if (key == "theme" && fileExists(value)) m_themeScriptPath = value;
+    }
+}
+
+void EngineSimApplication::saveSession() const {
+    if (m_userDataPath.empty()) return;
+
+    const fs::path sessionPath = fs::path(m_userDataPath) / "session.ini";
+    std::ofstream file(sessionPath, std::ios::out | std::ios::trunc);
+    if (!file.is_open()) return;
+
+    file << "engine=" << m_engineScriptPath << "\n";
+    file << "theme=" << m_themeScriptPath << "\n";
 }
 
 void EngineSimApplication::initialize() {
     m_shaders.SetClearColor(ysColor::srgbiToLinear(0x34, 0x98, 0xdb));
-    m_assetManager.CompileInterchangeFile((m_assetPath + "/assets").c_str(), 1.0f, true);
-    m_assetManager.LoadSceneFile((m_assetPath + "/assets").c_str(), true);
+    // The compiled scene (.ysce) is shipped with the application; only rebuild
+    // it from the interchange file (.dia) when it is missing. Recompiling on
+    // every launch was slow and required write access to the data folder.
+    const std::string sceneFile = m_assetPath + "/assets";
+    if (!fileExists(sceneFile + ".ysce") && fileExists(sceneFile + ".dia")) {
+        m_assetManager.CompileInterchangeFile(sceneFile.c_str(), 1.0f, true);
+    }
+    m_assetManager.LoadSceneFile(sceneFile.c_str(), true);
 
     m_textRenderer.SetEngine(&m_engine);
     m_textRenderer.SetRenderer(m_engine.GetUiRenderer());
     m_textRenderer.SetFont(m_engine.GetConsole()->GetFont());
 
+    // Pick the scripts to start with: command line, then the previous
+    // session, then the legacy main.mr entry point
+    loadSession();
+
+    if (!m_startupOptions.engineScript.empty()) {
+        m_engineScriptPath = normalizePath(fs::absolute(m_startupOptions.engineScript));
+    }
+
+    if (!m_startupOptions.themeScript.empty()) {
+        m_themeScriptPath = normalizePath(fs::absolute(m_startupOptions.themeScript));
+    }
+
+    if (m_engineScriptPath.empty()) {
+        m_engineScriptPath = normalizePath(fs::path(m_assetPath) / "main.mr");
+    }
+
     loadScript();
+
+    if (m_startupOptions.fullscreen == StartupOptions::Toggle::On) {
+        m_engine.GetGameWindow()->SetWindowStyle(ysWindow::WindowStyle::Fullscreen);
+    }
+    else if (m_startupOptions.fullscreen == StartupOptions::Toggle::Off) {
+        m_engine.GetGameWindow()->SetWindowStyle(ysWindow::WindowStyle::Windowed);
+    }
 
     m_audioBuffer.initialize(44100, 44100);
     m_audioBuffer.m_writePointer = (int)(44100 * 0.1);
@@ -177,7 +422,7 @@ void EngineSimApplication::initialize() {
         m_engine.GetAudioDevice()->CreateBuffer(&params, 44100);
 
     m_audioSource = m_engine.GetAudioDevice()->CreateSource(m_outputAudioBuffer);
-    m_audioSource->SetMode((m_simulator->getEngine() != nullptr)
+    m_audioSource->SetMode((m_simulator != nullptr && m_simulator->getEngine() != nullptr)
         ? ysAudioSource::Mode::Loop
         : ysAudioSource::Mode::Stop);
     m_audioSource->SetPan(0.0f);
@@ -270,8 +515,14 @@ void EngineSimApplication::process(float frame_dt) {
         maxWrite = 0;
     }
 
-    int16_t *samples = new int16_t[maxWrite];
-    const int readSamples = m_simulator->readAudioOutput(maxWrite, samples);
+    if (m_audioScratch.size() < maxWrite) {
+        m_audioScratch.resize(maxWrite);
+    }
+
+    int16_t *samples = m_audioScratch.data();
+    const int readSamples = (maxWrite > 0)
+        ? m_simulator->readAudioOutput(maxWrite, samples)
+        : 0;
 
     for (SampleOffset i = 0; i < (SampleOffset)readSamples && i < maxWrite; ++i) {
         const int16_t sample = samples[i];
@@ -285,8 +536,6 @@ void EngineSimApplication::process(float frame_dt) {
 
         m_oscillatorSampleOffset = (m_oscillatorSampleOffset + 1) % (44100 / 10);
     }
-
-    delete[] samples;
 
     if (readSamples > 0) {
         SampleOffset size0, size1;
@@ -312,6 +561,11 @@ void EngineSimApplication::process(float frame_dt) {
 }
 
 void EngineSimApplication::render() {
+    if (m_showConsole) {
+        m_uiManager.render();
+        return;
+    }
+
     for (SimulationObject *object : m_objects) {
         object->generateGeometry();
     }
@@ -354,11 +608,38 @@ void EngineSimApplication::run() {
         }
 
         if (m_engine.ProcessKeyDown(ysKey::Code::Return)) {
-            m_audioSource->SetMode(ysAudioSource::Mode::Stop);
-            loadScript();
-            if (m_simulator->getEngine() != nullptr) {
-                m_audioSource->SetMode(ysAudioSource::Mode::Loop);
-            }
+            reloadScripts();
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::F5)) {
+            m_showConsole = !m_showConsole;
+        }
+
+        // While paused [Right] advances the simulation by one frame
+        if (m_engine.ProcessKeyDown(ysKey::Code::P)) {
+            m_paused = !m_paused;
+            m_infoCluster->setLogMessage(m_paused ? "PAUSED ([RIGHT] TO STEP)" : "RESUMED");
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::PageDown)) {
+            cycleEngineScript(1);
+        }
+        else if (m_engine.ProcessKeyDown(ysKey::Code::PageUp)) {
+            cycleEngineScript(-1);
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::OEM_6)) {
+            cycleThemeScript(1);
+        }
+        else if (m_engine.ProcessKeyDown(ysKey::Code::OEM_4)) {
+            cycleThemeScript(-1);
+        }
+
+        // While the console is open the arrow keys scroll it instead of
+        // changing gears
+        if (m_showConsole && m_console != nullptr) {
+            if (m_engine.ProcessKeyDown(ysKey::Code::Up)) m_console->scroll(-1);
+            if (m_engine.ProcessKeyDown(ysKey::Code::Down)) m_console->scroll(1);
         }
 
         if (m_engine.ProcessKeyDown(ysKey::Code::Tab)) {
@@ -418,7 +699,11 @@ void EngineSimApplication::run() {
         stopRecording();
     }
 
-    m_simulator->endAudioRenderingThread();
+    if (m_simulator != nullptr) {
+        m_simulator->endAudioRenderingThread();
+    }
+
+    saveSession();
 }
 
 void EngineSimApplication::destroy() {
@@ -430,7 +715,26 @@ void EngineSimApplication::destroy() {
     m_assetManager.Destroy();
     m_engine.Destroy();
 
-    m_simulator->destroy();
+    destroyObjects();
+
+    if (m_simulator != nullptr) {
+        m_simulator->releaseSimulation();
+        delete m_simulator;
+        m_simulator = nullptr;
+    }
+
+    if (m_iceEngine != nullptr) {
+        m_iceEngine->destroy();
+        delete m_iceEngine;
+        m_iceEngine = nullptr;
+    }
+
+    delete m_vehicle;
+    m_vehicle = nullptr;
+
+    delete m_transmission;
+    m_transmission = nullptr;
+
     m_audioBuffer.destroy();
 }
 
@@ -444,6 +748,7 @@ void EngineSimApplication::loadEngine(
     if (m_simulator != nullptr) {
         m_simulator->releaseSimulation();
         delete m_simulator;
+        m_simulator = nullptr;
     }
 
     if (m_vehicle != nullptr) {
@@ -459,23 +764,31 @@ void EngineSimApplication::loadEngine(
     if (m_iceEngine != nullptr) {
         m_iceEngine->destroy();
         delete m_iceEngine;
+        m_iceEngine = nullptr;
     }
 
     m_iceEngine = engine;
     m_vehicle = vehicle;
     m_transmission = transmission;
 
-    m_simulator = engine->createSimulator(vehicle, transmission);
-
     if (engine == nullptr || vehicle == nullptr || transmission == nullptr) {
-        m_iceEngine = nullptr;
-        m_viewParameters.Layer1 = 0;
+        // Keep an idle simulator around so that the UI has something to
+        // display while no engine is loaded (e.g. after a script error)
+        PistonEngineSimulator *idleSimulator = new PistonEngineSimulator;
+        idleSimulator->initialize(Simulator::Parameters());
+        idleSimulator->loadSimulation(nullptr, nullptr, nullptr);
+        m_simulator = idleSimulator;
 
+        m_viewParameters.Layer0 = 0;
+        m_viewParameters.Layer1 = 0;
         return;
     }
 
+    m_simulator = engine->createSimulator(vehicle, transmission);
+
     createObjects(engine);
 
+    m_viewParameters.Layer0 = 0;
     m_viewParameters.Layer1 = engine->getMaxDepth();
     engine->calculateDisplacement();
 
@@ -485,13 +798,24 @@ void EngineSimApplication::loadEngine(
     audioParams.inputSampleNoise = static_cast<float>(engine->getInitialJitter());
     audioParams.airNoise = static_cast<float>(engine->getInitialNoise());
     audioParams.dF_F_mix = static_cast<float>(engine->getInitialHighFrequencyGain());
+    audioParams.convolution = static_cast<float>(engine->getInitialConvolution());
     m_simulator->synthesizer().setAudioParameters(audioParams);
 
     for (int i = 0; i < engine->getExhaustSystemCount(); ++i) {
         ImpulseResponse *response = engine->getExhaustSystem(i)->getImpulseResponse();
 
-        ysWindowsAudioWaveFile waveFile;
-        waveFile.OpenFile(response->getFilename().c_str());
+        ysAudioWaveFile waveFile;
+        const ysAudioFile::Error openError = waveFile.OpenFile(response->getFilename().c_str());
+        if (openError != ysAudioFile::Error::None || waveFile.GetSampleCount() == 0) {
+            // A missing or unreadable impulse response previously crashed the
+            // application; fall back to a pass-through response instead
+            m_scriptLog += "Warning: could not load impulse response '" + response->getFilename() + "'\n";
+
+            const int16_t unitImpulse = INT16_MAX;
+            m_simulator->synthesizer().initializeImpulseResponse(&unitImpulse, 1, response->getVolume(), i);
+            continue;
+        }
+
         waveFile.InitializeInternalBuffer(waveFile.GetSampleCount());
         waveFile.FillBuffer(0);
         waveFile.CloseFile();
@@ -561,6 +885,26 @@ void EngineSimApplication::configure(const ApplicationSettings &settings) {
 }
 
 void EngineSimApplication::createObjects(Engine *engine) {
+    WankelEngine *wankelEngine = dynamic_cast<WankelEngine *>(engine);
+    if (wankelEngine != nullptr) {
+        for (int i = 0; i < wankelEngine->getRotorCount(); ++i) {
+            WankelRotorObject *rotorObject = new WankelRotorObject;
+            rotorObject->initialize(this);
+            rotorObject->m_engine = wankelEngine;
+            rotorObject->m_rotor = wankelEngine->getRotor(i);
+            m_objects.push_back(rotorObject);
+        }
+
+        for (int i = 0; i < engine->getCrankshaftCount(); ++i) {
+            CrankshaftObject *crankshaftObject = new CrankshaftObject;
+            crankshaftObject->initialize(this);
+            crankshaftObject->m_crankshaft = engine->getCrankshaft(i);
+            m_objects.push_back(crankshaftObject);
+        }
+
+        return;
+    }
+
     for (int i = 0; i < engine->getCylinderCount(); ++i) {
         ConnectingRodObject *rodObject = new ConnectingRodObject;
         rodObject->initialize(this);
@@ -615,33 +959,110 @@ const SimulationObject::ViewParameters &
     return m_viewParameters;
 }
 
+bool EngineSimApplication::compileScript(
+    const std::string &path,
+    Engine **engine,
+    Vehicle **vehicle,
+    Transmission **transmission,
+    ApplicationSettings *settings,
+    bool *settingsSet)
+{
+    *engine = nullptr;
+    *vehicle = nullptr;
+    *transmission = nullptr;
+    *settingsSet = false;
+
+#ifdef ATG_ENGINE_SIM_PIRANHA_ENABLED
+    std::stringstream log;
+
+    es_script::Compiler compiler;
+    compiler.initialize(getScriptSearchPaths());
+    const bool compiled = compiler.compile(path, log);
+    if (compiled) {
+        const es_script::Compiler::Output output = compiler.execute();
+
+        *engine = output.engine;
+        *vehicle = output.vehicle;
+        *transmission = output.transmission;
+        *settings = output.applicationSettings;
+        *settingsSet = output.applicationSettingsSet;
+    }
+
+    compiler.destroy();
+
+    const std::string errors = log.str();
+    if (!errors.empty()) {
+        m_scriptLog += fs::path(path).filename().string() + ":\n" + errors;
+    }
+
+    // Keep a copy of the log on disk for reference
+    if (!m_userDataPath.empty()) {
+        std::ofstream logFile(fs::path(m_userDataPath) / "error_log.log", std::ios::out | std::ios::trunc);
+        logFile << m_scriptLog;
+    }
+
+    return compiled;
+#else
+    (void)path;
+    (void)settings;
+    m_scriptLog += "Scripting support is disabled in this build\n";
+    return false;
+#endif /* ATG_ENGINE_SIM_PIRANHA_ENABLED */
+}
+
 void EngineSimApplication::loadScript() {
+    m_scriptLog.clear();
+    m_scriptErrors = false;
+
     Engine *engine = nullptr;
     Vehicle *vehicle = nullptr;
     Transmission *transmission = nullptr;
 
-#ifdef ATG_ENGINE_SIM_PIRANHA_ENABLED
-    es_script::Compiler compiler;
-    compiler.initialize();
-    const bool compiled = compiler.compile("../assets/main.mr");
-    if (compiled) {
-        const es_script::Compiler::Output output = compiler.execute();
-        configure(output.applicationSettings);
+    ApplicationSettings settings;
+    bool settingsSet = false;
 
-        engine = output.engine;
-        vehicle = output.vehicle;
-        transmission = output.transmission;
+    if (!compileScript(m_engineScriptPath, &engine, &vehicle, &transmission, &settings, &settingsSet)) {
+        m_scriptErrors = true;
     }
-    else {
-        engine = nullptr;
-        vehicle = nullptr;
-        transmission = nullptr;
+    else if (engine == nullptr) {
+        m_scriptLog +=
+            "The script did not specify an engine. Add a call such as\n"
+            "    run(engine: my_engine())\n"
+            "or call main() at the end of the file.\n";
+        m_scriptErrors = true;
     }
 
-    compiler.destroy();
-#endif /* ATG_ENGINE_SIM_PIRANHA_ENABLED */
+    // A theme selected by the user takes priority over one set by the engine
+    // script (e.g. the legacy main.mr)
+    if (!m_themeScriptPath.empty()) {
+        Engine *themeEngine = nullptr;
+        Vehicle *themeVehicle = nullptr;
+        Transmission *themeTransmission = nullptr;
+        ApplicationSettings themeSettings;
+        bool themeSettingsSet = false;
 
-    if (vehicle == nullptr) {
+        if (compileScript(m_themeScriptPath, &themeEngine, &themeVehicle, &themeTransmission, &themeSettings, &themeSettingsSet)
+            && themeSettingsSet)
+        {
+            settings = themeSettings;
+            settingsSet = true;
+        }
+
+        // Theme scripts should only contain settings
+        if (themeEngine != nullptr) {
+            themeEngine->destroy();
+            delete themeEngine;
+        }
+
+        delete themeVehicle;
+        delete themeTransmission;
+    }
+
+    if (settingsSet) {
+        configure(settings);
+    }
+
+    if (engine != nullptr && vehicle == nullptr) {
         Vehicle::Parameters vehParams;
         vehParams.mass = units::mass(1597, units::kg);
         vehParams.diffRatio = 3.42;
@@ -653,7 +1074,7 @@ void EngineSimApplication::loadScript() {
         vehicle->initialize(vehParams);
     }
 
-    if (transmission == nullptr) {
+    if (engine != nullptr && transmission == nullptr) {
         const double gearRatios[] = { 2.97, 2.07, 1.43, 1.00, 0.84, 0.56 };
         Transmission::Parameters tParams;
         tParams.GearCount = 6;
@@ -663,8 +1084,161 @@ void EngineSimApplication::loadScript() {
         transmission->initialize(tParams);
     }
 
-    loadEngine(engine, vehicle, transmission);
+    if (engine == nullptr) {
+        delete vehicle;
+        delete transmission;
+        vehicle = nullptr;
+        transmission = nullptr;
+    }
+
+    // Keep the current engine running if the new script failed to produce one
+    if (engine != nullptr || m_iceEngine == nullptr) {
+        loadEngine(engine, vehicle, transmission);
+    }
+
     refreshUserInterface();
+
+    if (m_scriptErrors) {
+        m_infoCluster->setLogMessage("<ERROR: CHECK CONSOLE [F5]> " + fs::path(m_engineScriptPath).filename().string());
+    }
+    else {
+        m_infoCluster->setLogMessage("Loaded " + fs::path(m_engineScriptPath).filename().string());
+    }
+}
+
+void EngineSimApplication::loadEngineScript(const std::string &path) {
+    m_engineScriptPath = normalizePath(fs::absolute(path));
+    reloadScripts();
+    saveSession();
+}
+
+void EngineSimApplication::loadThemeScript(const std::string &path) {
+    m_themeScriptPath = path.empty() ? std::string() : normalizePath(fs::absolute(path));
+    reloadScripts();
+    saveSession();
+}
+
+void EngineSimApplication::reloadScripts() {
+    if (m_audioSource != nullptr) {
+        m_audioSource->SetMode(ysAudioSource::Mode::Stop);
+    }
+
+    loadScript();
+
+    if (m_audioSource != nullptr && m_simulator != nullptr && m_simulator->getEngine() != nullptr) {
+        m_audioSource->SetMode(ysAudioSource::Mode::Loop);
+    }
+}
+
+namespace {
+    // Engine scripts call main() or run() at the top level; files without
+    // such a call are part libraries (e.g. radial.mr)
+    bool isRunnableScript(const fs::path &path) {
+        std::ifstream file(path);
+        std::string line;
+        while (std::getline(file, line)) {
+            const size_t start = line.find_first_not_of(" \t");
+            if (start != 0) continue;
+            if (line.compare(0, 6, "main()") == 0 || line.compare(0, 4, "run(") == 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    std::vector<std::string> findScripts(
+        const std::vector<fs::path> &directories,
+        bool recursive,
+        bool runnableOnly)
+    {
+        std::vector<std::string> scripts;
+        for (const fs::path &directory : directories) {
+            std::error_code ec;
+            if (!fs::is_directory(directory, ec)) continue;
+
+            auto consider = [&](const fs::directory_entry &entry) {
+                if (!entry.is_regular_file() || entry.path().extension() != ".mr") return;
+                if (runnableOnly && !isRunnableScript(entry.path())) return;
+                scripts.push_back(normalizePath(entry.path()));
+            };
+
+            if (recursive) {
+                for (const auto &entry : fs::recursive_directory_iterator(directory, ec)) consider(entry);
+            }
+            else {
+                for (const auto &entry : fs::directory_iterator(directory, ec)) consider(entry);
+            }
+        }
+
+        std::sort(scripts.begin(), scripts.end());
+        scripts.erase(std::unique(scripts.begin(), scripts.end()), scripts.end());
+        return scripts;
+    }
+
+    int nextIndex(const std::vector<std::string> &list, const std::string &current, int direction) {
+        const int n = static_cast<int>(list.size());
+        const auto it = std::find(list.begin(), list.end(), current);
+        if (it == list.end()) return direction > 0 ? 0 : n - 1;
+
+        const int i = static_cast<int>(it - list.begin());
+        return ((i + direction) % n + n) % n;
+    }
+} /* namespace */
+
+std::vector<std::string> EngineSimApplication::findEngineScripts() const {
+    std::vector<std::string> scripts = findScripts(
+        { fs::path(m_assetPath) / "engines", fs::path(m_userDataPath) / "assets" / "engines" },
+        true,
+        true);
+
+    const std::string mainScript = normalizePath(fs::path(m_assetPath) / "main.mr");
+    if (fileExists(mainScript)) {
+        scripts.insert(scripts.begin(), mainScript);
+    }
+
+    return scripts;
+}
+
+std::vector<std::string> EngineSimApplication::findThemeScripts() const {
+    return findScripts(
+        { fs::path(m_assetPath) / "themes", fs::path(m_userDataPath) / "assets" / "themes" },
+        false,
+        false);
+}
+
+void EngineSimApplication::cycleEngineScript(int direction) {
+    const std::vector<std::string> scripts = findEngineScripts();
+    if (scripts.empty()) {
+        m_infoCluster->setLogMessage("No engine scripts found");
+        return;
+    }
+
+    const int index = nextIndex(scripts, m_engineScriptPath, direction);
+    loadEngineScript(scripts[index]);
+
+    if (!m_scriptErrors) {
+        m_infoCluster->setLogMessage(
+            "[" + std::to_string(index + 1) + "/" + std::to_string(scripts.size()) + "] "
+            + fs::path(scripts[index]).filename().string());
+    }
+}
+
+void EngineSimApplication::cycleThemeScript(int direction) {
+    std::vector<std::string> themes = findThemeScripts();
+
+    // The first entry restores the theme set by the engine script (if any)
+    themes.insert(themes.begin(), std::string());
+
+    const int index = nextIndex(themes, m_themeScriptPath, direction);
+    loadThemeScript(themes[index]);
+
+    if (!m_scriptErrors) {
+        m_infoCluster->setLogMessage(
+            themes[index].empty()
+                ? std::string("Theme: script default")
+                : "Theme: " + fs::path(themes[index]).stem().string());
+    }
 }
 
 void EngineSimApplication::processEngineInput() {
@@ -899,6 +1473,12 @@ void EngineSimApplication::processEngineInput() {
         }
     }
 
+    const bool braking = m_engine.IsKeyDown(ysKey::Code::OEM_Period);
+    if (m_vehicle != nullptr && braking != (m_vehicle->getBrakeLevel() > 0)) {
+        m_vehicle->setBrakeLevel(braking ? 1.0 : 0.0);
+        m_infoCluster->setLogMessage(braking ? "BRAKE APPLIED" : "BRAKE RELEASED");
+    }
+
     if (m_engine.IsKeyDown(ysKey::Code::T)) {
         m_targetClutchPressure -= 0.2 * dt;
     }
@@ -1010,6 +1590,24 @@ void EngineSimApplication::renderScene() {
         m_infoCluster->setVisible(false);
     }
 
+    {
+        const Bounds windowBounds((float)screenWidth, (float)screenHeight, { 0, (float)screenHeight });
+        m_console->m_bounds = windowBounds.inset(40.0f);
+        m_console->setVisible(m_showConsole);
+        if (m_showConsole) {
+            // Text is drawn in a separate pass so the console's background
+            // can't cover the other panels; hide them instead
+            m_engineView->setVisible(false);
+            m_rightGaugeCluster->setVisible(false);
+            m_oscCluster->setVisible(false);
+            m_performanceCluster->setVisible(false);
+            m_loadSimulationCluster->setVisible(false);
+            m_mixerCluster->setVisible(false);
+            m_infoCluster->setVisible(false);
+            m_console->activate();
+        }
+    }
+
     const float cameraAspectRatio =
         m_engineView->m_bounds.width() / m_engineView->m_bounds.height();
     m_engine.GetDevice()->ResizeRenderTarget(
@@ -1060,6 +1658,9 @@ void EngineSimApplication::refreshUserInterface() {
     m_loadSimulationCluster = m_uiManager.getRoot()->addElement<LoadSimulationCluster>();
     m_mixerCluster = m_uiManager.getRoot()->addElement<MixerCluster>();
     m_infoCluster = m_uiManager.getRoot()->addElement<InfoCluster>();
+
+    // Added last so that it's drawn on top of everything else
+    m_console = m_uiManager.getRoot()->addElement<ConsoleOverlay>();
 
     m_infoCluster->setEngine(m_iceEngine);
     m_rightGaugeCluster->m_simulator = m_simulator;

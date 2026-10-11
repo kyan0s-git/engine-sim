@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "../include/audio_buffer.h"
 
 #include <assert.h>

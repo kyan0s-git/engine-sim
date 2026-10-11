@@ -18,11 +18,12 @@ namespace es_script {
             EngineContext *context,
             Crankshaft *crank) override
         {
-            StandardValvetrain *valvetrain = new StandardValvetrain;
+            Engine *engine = context->getEngine();
+            StandardValvetrain *valvetrain = engine->addOwnedObject(new StandardValvetrain);
 
             Camshaft
-                *intakeCam = new Camshaft(),
-                *exhaustCam = new Camshaft();
+                *intakeCam = engine->addOwnedObject(new Camshaft()),
+                *exhaustCam = engine->addOwnedObject(new Camshaft());
 
             m_intakeCamshaft->generate(intakeCam, crank, context);
             m_exhaustCamshaft->generate(exhaustCam, crank, context);
@@ -36,7 +37,7 @@ namespace es_script {
         }
 
     protected:
-        virtual void registerInputs() {
+        virtual void registerInputs() override {
             addInput("intake_camshaft", &m_intakeCamshaft, InputTarget::Type::Object);
             addInput("exhaust_camshaft", &m_exhaustCamshaft, InputTarget::Type::Object);
 

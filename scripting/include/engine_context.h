@@ -54,8 +54,10 @@ namespace es_script {
         void setEngine(Engine *engine) { m_engine = engine; }
         Engine *getEngine() const { return m_engine; }
 
-        void setCylinderIndex(const CylinderBankNode *bank, int localIndex, int globalIndex);
-        int getCylinderIndex(const CylinderBankNode *bank, int localIndex) const;
+        // Maps the cylinders of a cylinder bank (or the chambers of a rotor)
+        // to their global index
+        void setCylinderIndex(const void *owner, int localIndex, int globalIndex);
+        int getCylinderIndex(const void *owner, int localIndex) const;
 
     protected:
         Engine *m_engine = nullptr;
@@ -68,7 +70,7 @@ namespace es_script {
         std::map<RodJournalNode *, int> m_rodJournals;
         std::map<CrankshaftNode *, Crankshaft *> m_crankshafts;
         std::map<ConnectingRodNode *, ConnectingRod *> m_rods;
-        std::map<std::pair<const CylinderBankNode *, int>, int> m_cylinderIndices;
+        std::map<std::pair<const void *, int>, int> m_cylinderIndices;
     };
 
 } /* namespace es_script */

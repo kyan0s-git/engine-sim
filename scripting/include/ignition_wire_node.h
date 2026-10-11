@@ -14,14 +14,15 @@ namespace es_script {
 
     class IgnitionWireNode : public ObjectReferenceNode<IgnitionWireNode> {
     public:
-        using Connection = std::pair<CylinderBankNode *, int>;
+        // Owner (cylinder bank or rotor) and local cylinder index
+        using Connection = std::pair<const void *, int>;
 
     public:
         IgnitionWireNode() { /* void */ }
         virtual ~IgnitionWireNode() { /* void */ }
 
-        void connect(CylinderBankNode *bank, int i) {
-            m_connections.insert({ bank, i });
+        void connect(const void *owner, int i) {
+            m_connections.insert({ owner, i });
         }
 
         std::set<Connection> getConnections() const {

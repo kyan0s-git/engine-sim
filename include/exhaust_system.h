@@ -19,6 +19,10 @@ class ExhaustSystem : public Part {
             double velocityDecay;
             double audioVolume;
             ImpulseResponse *impulseResponse;
+
+            // Fraction of the gas flowing back into the exhaust from the
+            // outlet that is fresh air (rather than exhaust gas)
+            double backflowAtmosphericMixing = 0.0;
         };
 
     public:
@@ -55,6 +59,7 @@ class ExhaustSystem : public Part {
         double m_outletFlowRate;
         double m_audioVolume;
         double m_velocityDecay;
+        double m_backflowAtmosphericMixing;
         int m_index;
 
         double m_flow;

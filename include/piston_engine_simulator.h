@@ -25,8 +25,8 @@ class PistonEngineSimulator : public Simulator {
 
         void loadSimulation(Engine *engine, Vehicle *vehicle, Transmission *transmission);
 
-        virtual double getTotalExhaustFlow() const;
-        void endFrame();
+        virtual double getTotalExhaustFlow() const override;
+        virtual void endFrame() override;
         virtual void destroy() override;
 
         void setFluidSimulationSteps(int steps) { m_fluidSimulationSteps = steps; }
@@ -41,6 +41,15 @@ class PistonEngineSimulator : public Simulator {
         virtual void simulateStep_() override;
 
     protected:
+        // Adds the engine specific bodies, constraints and force generators
+        // (pistons, connecting rods, ...) to the rigid body system
+        virtual void addEngineParts();
+
+        // Moves the engine's parts into their initial positions
+        virtual void placeParts();
+
+        virtual void processIgnitionEvents();
+
         void placeAndInitialize();
         void placeCylinder(int i);
         
@@ -56,7 +65,12 @@ class PistonEngineSimulator : public Simulator {
         atg_scs::LineConstraint *m_cylinderWallConstraints;
         atg_scs::LinkConstraint *m_linkConstraints;
         atg_scs::RigidBody m_vehicleMass;
+        atg_scs::RigidBody m_driveshaft;
         VehicleDragConstraint m_vehicleDrag;
+
+        // Inertia of the transmission output/driveshaft when drivetrain flex
+        // is simulated [kg*m^2]
+        static constexpr double DriveshaftInertia = 0.05;
 
         std::chrono::steady_clock::time_point m_simulationStart;
         std::chrono::steady_clock::time_point m_simulationEnd;

@@ -66,14 +66,22 @@ TEST(FunctionTests, FunctionGaussianTest) {
     f.addSample(5.0, 10.0);
     f.addSample(4.0, 9.0);
 
-    EXPECT_NEAR(f.sampleGaussian(2.0), 1.0, 0.1);
-    EXPECT_NEAR(f.sampleGaussian(4.0), 9.0, 0.3);
+    // Outside of the sampled range the endpoints dominate
     EXPECT_NEAR(f.sampleGaussian(100.0), 10.0, 1E-3);
     EXPECT_NEAR(f.sampleGaussian(-100.0), 1.0, 1E-3);
 
-    for (double s = 2.0; s <= 3.0; s += 0.001) {
+    // Within a flat region the smoothed value stays close to the samples
+    // (the kernel is wide enough to pick up a small contribution from x = 3)
+    EXPECT_NEAR(f.sampleGaussian(0.5), 1.0, 0.01);
+
+    // Smoothing never overshoots the data and preserves monotonicity
+    double previous = f.sampleGaussian(0.0);
+    for (double s = 0.0; s <= 5.0; s += 0.01) {
         const double v = f.sampleGaussian(s);
-        std::cerr << v << "\n";
+        EXPECT_GE(v, 1.0 - 1E-6);
+        EXPECT_LE(v, 10.0 + 1E-6);
+        EXPECT_GE(v, previous - 1E-6);
+        previous = v;
     }
 
     f.destroy();

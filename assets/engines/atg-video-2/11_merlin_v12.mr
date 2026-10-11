@@ -143,7 +143,9 @@ public node merlin_v12 {
 
     engine engine(
         name: "Merlin V-1650-9 [V12] (NA)",
-        starter_torque: 190 * units.lb_ft,
+        // The original 190 lb-ft could not turn the engine over against
+        // compression; real Merlins used a high reduction starter
+        starter_torque: 400 * units.lb_ft,
         starter_speed: 200 * units.rpm,
         redline: 3000 * units.rpm,
         fuel: fuel(
@@ -475,7 +477,11 @@ private node random_transmission {
 }
 
 public node main {
-    set_engine(merlin_v12())
-    set_vehicle(random_car())
-    set_transmission(random_transmission())
+    run(
+        engine: merlin_v12(),
+        transmission: random_transmission(),
+        vehicle: random_car()
+    )
 }
+
+main()

@@ -22,7 +22,11 @@ namespace es_script {
         EngineNode() { /* void */ }
         virtual ~EngineNode() { /* void */ }
 
-        void buildEngine(Engine *engine) {
+        virtual Engine *createEngine() const {
+            return new Engine;
+        }
+
+        virtual void buildEngine(Engine *engine) {
             int cylinderCount = 0;
             for (const CylinderBankNode *bank : m_cylinderBanks) {
                 cylinderCount += bank->getCylinderCount();
@@ -107,7 +111,7 @@ namespace es_script {
 
             m_ignitionModule->generate(engine, &context);
             
-            Function *meanPistonSpeedToTurbulence = new Function;
+            Function *meanPistonSpeedToTurbulence = engine->addOwnedObject(new Function);
             meanPistonSpeedToTurbulence->initialize(30, 1);
             for (int i = 0; i < 30; ++i) {
                 const double s = (double)i;
@@ -123,6 +127,8 @@ namespace es_script {
             ccParams.StartingPressure = units::pressure(1.0, units::atm);
             ccParams.StartingTemperature = units::celcius(25.0);
             ccParams.MeanPistonSpeedToTurbulence = meanPistonSpeedToTurbulence;
+            ccParams.HeatTransferCoefficient = parameters.heatTransferCoefficient;
+            ccParams.BlockTemperature = parameters.blockTemperature;
 
             for (int i = 0; i < engine->getCylinderCount(); ++i) {
                 ccParams.Piston = engine->getPiston(i);
@@ -164,6 +170,11 @@ namespace es_script {
             addInput("hf_gain", &m_parameters.initialHighFrequencyGain);
             addInput("jitter", &m_parameters.initialJitter);
             addInput("noise", &m_parameters.initialNoise);
+            addInput("convolution", &m_parameters.initialConvolution);
+            addInput("max_sle_solver_steps", &m_parameters.maxSleSolverSteps);
+            addInput("fluid_simulation_steps", &m_parameters.fluidSimulationSteps);
+            addInput("heat_transfer_coefficient", &m_parameters.heatTransferCoefficient);
+            addInput("block_temperature", &m_parameters.blockTemperature);
 
             ObjectReferenceNode<EngineNode>::registerInputs();
         }

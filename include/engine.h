@@ -16,6 +16,9 @@
 #include "throttle.h"
 
 #include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 class Simulator;
 class Vehicle;
@@ -44,6 +47,15 @@ class Engine : public Part {
             double initialHighFrequencyGain;
             double initialNoise;
             double initialJitter;
+            double initialConvolution = 1.0;
+
+            // Simulation quality settings (lower values run faster)
+            int maxSleSolverSteps = 128;
+            int fluidSimulationSteps = 8;
+
+            // Heat transfer between the cylinder charge and the engine block
+            double heatTransferCoefficient = 100.0;  // W / (m^2 K)
+            double blockTemperature = units::celcius(90.0);
         };
 
     public:
@@ -99,15 +111,47 @@ class Engine : public Part {
         IgnitionModule *getIgnitionModule() { return &m_ignitionModule; }
         ExhaustSystem *getExhaustSystem(int i) const { return &m_exhaustSystems[i]; }
         Intake *getIntake(int i) const { return &m_intakes[i]; }
-        CombustionChamber *getChamber(int i) const { return &m_combustionChambers[i]; }
+        CombustionChamber *getChamber(int i) const { return m_combustionChambers[i]; }
         Fuel *getFuel() { return &m_fuel; }
 
         double getSimulationFrequency() const { return m_initialSimulationFrequency; }
         double getInitialHighFrequencyGain() const { return m_initialHighFrequencyGain; }
         double getInitialNoise() const { return m_initialNoise; }
         double getInitialJitter() const { return m_initialJitter; }
+        double getInitialConvolution() const { return m_initialConvolution; }
+        int getMaxSleSolverSteps() const { return m_maxSleSolverSteps; }
+        int getFluidSimulationSteps() const { return m_fluidSimulationSteps; }
+        double getHeatTransferCoefficient() const { return m_heatTransferCoefficient; }
+        double getBlockTemperature() const { return m_blockTemperature; }
 
         virtual Simulator *createSimulator(Vehicle *vehicle, Transmission *transmission);
+
+        // Takes ownership of an object that the engine's parts refer to but
+        // that was created separately (e.g. functions, camshafts and impulse
+        // responses created by a script). Owned objects are released by
+        // destroy().
+        template <typename T>
+        T *addOwnedObject(T *object) {
+            m_ownedObjects.push_back({ object, [](void *p) {
+                T *typed = static_cast<T *>(p);
+                if constexpr (HasDestroy<T>::value) typed->destroy();
+                delete typed;
+            } });
+
+            return object;
+        }
+
+    protected:
+        virtual CombustionChamber *createCombustionChamber(int index);
+
+        template <typename T, typename = void>
+        struct HasDestroy : std::false_type {};
+
+        template <typename T>
+        struct HasDestroy<T, std::void_t<decltype(std::declval<T &>().destroy())>>
+            : std::true_type {};
+
+        std::vector<std::pair<void *, void (*)(void *)>> m_ownedObjects;
 
     protected:
         std::string m_name;
@@ -121,7 +165,7 @@ class Engine : public Part {
 
         Piston *m_pistons;
         ConnectingRod *m_connectingRods;
-        CombustionChamber *m_combustionChambers;
+        CombustionChamber **m_combustionChambers;
         int m_cylinderCount;
 
         double m_starterTorque;
@@ -135,6 +179,12 @@ class Engine : public Part {
         double m_initialHighFrequencyGain;
         double m_initialNoise;
         double m_initialJitter;
+        double m_initialConvolution;
+
+        int m_maxSleSolverSteps;
+        int m_fluidSimulationSteps;
+        double m_heatTransferCoefficient;
+        double m_blockTemperature;
 
         ExhaustSystem *m_exhaustSystems;
         int m_exhaustSystemCount;

@@ -151,3 +151,9 @@ public node kohler_ch750 {
             rev_limit: 5000 * units.rpm
         ))
 }
+
+public node main {
+    run(engine: kohler_ch750())
+}
+
+main()

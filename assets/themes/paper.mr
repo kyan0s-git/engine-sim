@@ -1,4 +1,4 @@
-import "engine_sim.mr"
+import "engine_sim_theme.mr"
 
 unit_names units()
 public node use_paper_theme {
@@ -30,3 +30,6 @@ public node use_paper_theme {
         color_green: color
     )
 }
+
+// Applied when this file is loaded as a theme (e.g. with [K] or --theme)
+use_paper_theme()

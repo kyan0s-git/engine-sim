@@ -1,10 +1,13 @@
 #include "../include/simulator.h"
 
+#include <algorithm>
+
 Simulator::Simulator() {
     m_engine = nullptr;
     m_vehicle = nullptr;
     m_transmission = nullptr;
     m_system = nullptr;
+    m_sleSolver = nullptr;
 
     m_physicsProcessingTime = 0;
 
@@ -29,8 +32,8 @@ void Simulator::initialize(const Parameters &params) {
     if (params.systemType == SystemType::NsvOptimized) {
         atg_scs::OptimizedNsvRigidBodySystem *system =
             new atg_scs::OptimizedNsvRigidBodySystem;
-        system->initialize(
-            new atg_scs::GaussSeidelSleSolver);
+        m_sleSolver = new atg_scs::GaussSeidelSleSolver;
+        system->initialize(m_sleSolver);
         m_system = system;
     }
     else {
@@ -46,6 +49,18 @@ void Simulator::initialize(const Parameters &params) {
     for (int i = 0; i < DynoTorqueSamples; ++i) {
         m_dynoTorqueSamples[i] = 0.0;
     }
+}
+
+void Simulator::setMaxSleSolverSteps(int steps) {
+    if (m_sleSolver != nullptr) {
+        m_sleSolver->m_maxIterations = std::max(1, steps);
+    }
+}
+
+int Simulator::getMaxSleSolverSteps() const {
+    return (m_sleSolver != nullptr)
+        ? m_sleSolver->m_maxIterations
+        : 0;
 }
 
 void Simulator::loadSimulation(Engine *engine, Vehicle *vehicle, Transmission *transmission) {
@@ -123,7 +138,7 @@ bool Simulator::simulateStep() {
     }
 
     const int index =
-        static_cast<int>(std::floor(DynoTorqueSamples * outputShaft->getCycleAngle() / (4 * constants::pi)));
+        static_cast<int>(std::floor(DynoTorqueSamples * outputShaft->getCycleAngle() / outputShaft->getCycleLength()));
     const int step = m_engine->isSpinningCw() ? 1 : -1;
     m_dynoTorqueSamples[index] = m_dyno.getTorque();
 
@@ -166,6 +181,9 @@ void Simulator::endFrame() {
 
 void Simulator::destroy() {
     m_synthesizer.destroy();
+
+    delete[] m_dynoTorqueSamples;
+    m_dynoTorqueSamples = nullptr;
 }
 
 void Simulator::startAudioRenderingThread() {
