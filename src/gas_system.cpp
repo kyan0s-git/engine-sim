@@ -160,14 +160,22 @@ double GasSystem::flowConstant(
     return targetFlowRate / flowRate;
 }
 
-double GasSystem::k_28inH2O(double flowRateScfm) {
+double GasSystem::k_inH2O(double flowRateScfm, double testPressureInH2O) {
     return flowConstant(
         units::flow(flowRateScfm, units::scfm),
         units::pressure(1.0, units::atm),
-        units::pressure(28.0, units::inH2O),
+        units::pressure(testPressureInH2O, units::inH2O),
         units::celcius(25),
         heatCapacityRatio(5)
     );
+}
+
+double GasSystem::k_28inH2O(double flowRateScfm) {
+    return k_inH2O(flowRateScfm, 28.0);
+}
+
+double GasSystem::k_32inH2O(double flowRateScfm) {
+    return k_inH2O(flowRateScfm, 32.0);
 }
 
 double GasSystem::k_carb(double flowRateScfm) {

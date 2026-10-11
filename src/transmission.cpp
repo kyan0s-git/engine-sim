@@ -11,8 +11,10 @@ Transmission::Transmission() {
     m_gearRatios = nullptr;
     m_maxClutchTorque = units::torque(1000.0, units::ft_lb);
     m_rotatingMass = nullptr;
+    m_output = nullptr;
     m_vehicle = nullptr;
     m_clutchPressure = 0.0;
+    m_simulateFlex = false;
 }
 
 Transmission::~Transmission() {
@@ -26,34 +28,51 @@ Transmission::~Transmission() {
 void Transmission::initialize(const Parameters &params) {
     m_gearCount = params.GearCount;
     m_maxClutchTorque = params.MaxClutchTorque;
+
+    delete[] m_gearRatios;
     m_gearRatios = new double[params.GearCount];
     memcpy(m_gearRatios, params.GearRatios, sizeof(double) * m_gearCount);
+
+    m_simulateFlex = params.SimulateFlex;
+    m_clutchSpring.m_ks = params.ClutchStiffness;
+    m_clutchSpring.m_kd = params.ClutchDamping;
+    m_clutchSpring.m_maxFlex = params.MaxClutchFlex;
+    m_clutchSpring.m_limitFlex = params.LimitClutchFlex;
+    m_clutchSpring.m_maxTorque = 0;
 }
 
 void Transmission::update(double dt) {
-    if (m_gear == -1) {
-        m_clutchConstraint.m_minTorque = 0;
-        m_clutchConstraint.m_maxTorque = 0;
-    }
-    else {
-        m_clutchConstraint.m_minTorque = -m_maxClutchTorque * m_clutchPressure;
-        m_clutchConstraint.m_maxTorque = m_maxClutchTorque * m_clutchPressure;
-    }
+    const double maxTorque = (m_gear == -1)
+        ? 0.0
+        : m_maxClutchTorque * m_clutchPressure;
+
+    m_clutchConstraint.m_minTorque = -maxTorque;
+    m_clutchConstraint.m_maxTorque = maxTorque;
+
+    m_clutchSpring.m_maxTorque = maxTorque;
+    m_clutchSpring.update(dt);
 }
 
 void Transmission::addToSystem(
     atg_scs::RigidBodySystem *system,
     atg_scs::RigidBody *rotatingMass,
     Vehicle *vehicle,
-    Engine *engine)
+    Engine *engine,
+    atg_scs::RigidBody *output)
 {
     m_rotatingMass = rotatingMass;
+    m_output = (output != nullptr) ? output : rotatingMass;
     m_vehicle = vehicle;
 
-    m_clutchConstraint.setBody1(&engine->getOutputCrankshaft()->m_body);
-    m_clutchConstraint.setBody2(m_rotatingMass);
-
-    system->addConstraint(&m_clutchConstraint);
+    if (m_simulateFlex) {
+        m_clutchSpring.connect(&engine->getOutputCrankshaft()->m_body, m_output);
+        system->addForceGenerator(&m_clutchSpring);
+    }
+    else {
+        m_clutchConstraint.setBody1(&engine->getOutputCrankshaft()->m_body);
+        m_clutchConstraint.setBody2(m_output);
+        system->addConstraint(&m_clutchConstraint);
+    }
 }
 
 void Transmission::changeGear(int newGear) {
@@ -76,6 +95,11 @@ void Transmission::changeGear(int newGear) {
         m_rotatingMass->p_x = m_rotatingMass->p_y = 0;
         m_rotatingMass->m = m_car;
         m_rotatingMass->v_theta = new_v_theta;
+
+        // Keep the driveshaft in step with the wheels after the ratio change
+        if (m_output != nullptr && m_output != m_rotatingMass) {
+            m_output->v_theta = new_v_theta;
+        }
     }
 
     m_gear = newGear;

@@ -13,6 +13,8 @@
 
 CombustionChamber::CombustionChamber() {
     m_crankcasePressure = 0.0;
+    m_heatTransferCoefficient = 100.0;
+    m_blockTemperature = units::celcius(90.0);
     m_piston = nullptr;
     m_head = nullptr;
     m_engine = nullptr;
@@ -49,6 +51,8 @@ void CombustionChamber::initialize(const Parameters &params) {
     m_head = params.Head;
     m_fuel = params.Fuel;
     m_crankcasePressure = params.CrankcasePressure;
+    m_heatTransferCoefficient = params.HeatTransferCoefficient;
+    m_blockTemperature = params.BlockTemperature;
     m_meanPistonSpeedToTurbulence = params.MeanPistonSpeedToTurbulence;
 
     m_pistonSpeed = new double[StateSamples];
@@ -243,9 +247,18 @@ void CombustionChamber::flow(double dt) {
         cylinderHeight * constants::pi * m_head->getCylinderBank()->getBore()
         + m_cylinderCrossSectionSurfaceArea * 2;
 
-    const double dT = units::celcius(90.0) - m_system.temperature();
-
-    m_system.changeEnergy(dT * cylinderSurfaceArea * 100 * dt);
+    // Heat exchange with the cylinder walls (Newton's law of cooling). The
+    // exact exponential solution is used instead of an explicit Euler step
+    // so that large coefficients or small charges can't overshoot the wall
+    // temperature and destabilize the simulation.
+    const double heatCapacity = 0.5 * m_system.degreesOfFreedom() * m_system.n() * constants::R;
+    if (heatCapacity > 0) {
+        const double T = m_system.temperature();
+        const double decay =
+            std::exp(-m_heatTransferCoefficient * cylinderSurfaceArea * dt / heatCapacity);
+        const double T_next = m_blockTemperature + (T - m_blockTemperature) * decay;
+        m_system.changeEnergy(heatCapacity * (T_next - T));
+    }
     m_system.flow(m_piston->getBlowbyK(), dt, m_crankcasePressure, units::celcius(25.0));
 
     Intake *intake = m_head->getIntake(m_piston->getCylinderIndex());

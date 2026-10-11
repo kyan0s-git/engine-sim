@@ -141,6 +141,7 @@ void es_script::LanguageRules::registerBuiltinNodeTypes() {
     registerBuiltinType<ConnectIgnitionWireNode>("__engine_sim__connect_ignition_wire");
     registerBuiltinType<AddIgnitionModuleNode>("__engine_sim__add_ignition_module");
     registerBuiltinType<k_28inH2ONode>("__engine_sim__k_28inH2O");
+    registerBuiltinType<k_32inH2ONode>("__engine_sim__k_32inH2O");
     registerBuiltinType<k_CarbNode>("__engine_sim__k_carb");
     registerBuiltinType<GenerateHarmonicCamLobeNode>("__engine_sim__generate_harmonic_cam_lobe");
     registerBuiltinType<SetApplicationSettingsNode>("__engine_sim__set_application_settings");

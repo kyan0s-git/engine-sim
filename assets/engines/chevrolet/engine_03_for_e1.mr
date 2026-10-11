@@ -200,3 +200,9 @@ public node engine_03_for_e1 {
         )
     )
 }
+
+public node main {
+    run(engine: engine_03_for_e1())
+}
+
+main()

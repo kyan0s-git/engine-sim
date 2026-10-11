@@ -10,6 +10,7 @@ ExhaustSystem::ExhaustSystem() {
     m_primaryTubeLength = 0;
     m_audioVolume = 0;
     m_velocityDecay = 0;
+    m_backflowAtmosphericMixing = 0;
     m_flow = 0;
     m_index = -1;
     m_impulseResponse = nullptr;
@@ -48,6 +49,7 @@ void ExhaustSystem::initialize(const Parameters &params) {
     m_outletFlowRate = params.outletFlowRate;
     m_collectorCrossSectionArea = params.collectorCrossSectionArea;
     m_velocityDecay = params.velocityDecay;
+    m_backflowAtmosphericMixing = params.backflowAtmosphericMixing;
     m_impulseResponse = params.impulseResponse;
     m_length = params.length;
     m_primaryTubeLength = params.primaryTubeLength;
@@ -58,10 +60,14 @@ void ExhaustSystem::destroy() {
 }
 
 void ExhaustSystem::process(double dt) {
+    // Air in the model is 25% oxygen (see Intake). By default gas pulled back
+    // in through the outlet is treated as inert exhaust gas.
+    const double o2 = 0.25 * m_backflowAtmosphericMixing;
+
     GasSystem::Mix airMix;
     airMix.p_fuel = 0;
-    airMix.p_inert = 1.0;
-    airMix.p_o2 = 0.0;
+    airMix.p_inert = 1.0 - o2;
+    airMix.p_o2 = o2;
 
     m_atmosphere.reset(units::pressure(1.0, units::atm), units::celcius(25.0), airMix);
     GasSystem::FlowParameters flowParams;

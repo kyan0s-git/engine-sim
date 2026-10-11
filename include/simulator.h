@@ -55,6 +55,10 @@ public:
     atg_scs::RigidBodySystem *getSystem() { return m_system; }
 
     void setSimulationFrequency(int frequency) { m_simulationFrequency = frequency; }
+
+    // Maximum number of iterations used by the constraint solver
+    void setMaxSleSolverSteps(int steps);
+    int getMaxSleSolverSteps() const;
     int getSimulationFrequency() const { return m_simulationFrequency; }
 
     double getTimestep() const { return 1.0 / m_simulationFrequency; }
@@ -86,6 +90,7 @@ protected:
     virtual void writeToSynthesizer() = 0;
 
     atg_scs::RigidBodySystem *m_system;
+    atg_scs::GaussSeidelSleSolver *m_sleSolver;
 
 private:
     void updateFilteredEngineSpeed(double dt);

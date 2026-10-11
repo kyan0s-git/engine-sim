@@ -78,6 +78,7 @@ add_library(engine-sim STATIC
     src/delay_filter.cpp
     src/derivative_filter.cpp
     src/direct_throttle_linkage.cpp
+    src/drivetrain_spring.cpp
     src/dynamometer.cpp
     src/engine.cpp
     src/exhaust_system.cpp
@@ -122,6 +123,7 @@ add_library(engine-sim STATIC
     include/delay_filter.h
     include/derivative_filter.h
     include/direct_throttle_linkage.h
+    include/drivetrain_spring.h
     include/dynamometer.h
     include/engine.h
     include/exhaust_system.h
@@ -216,6 +218,15 @@ if (PIRANHA_ENABLED)
     target_link_libraries(engine-sim-script-interpreter PUBLIC
         engine-sim
         piranha)
+endif()
+
+# ========================================================
+# Tools
+
+if (PIRANHA_ENABLED)
+    # Compiles and simulates engine scripts without a window (used by CI)
+    add_executable(engine-sim-script-check tools/script_check.cpp)
+    target_link_libraries(engine-sim-script-check PRIVATE engine-sim-script-interpreter)
 endif()
 
 # ========================================================

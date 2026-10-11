@@ -21,6 +21,9 @@ class CombustionChamber : public atg_scs::ForceGenerator {
             double StartingPressure;
             double StartingTemperature;
             double CrankcasePressure;
+
+            double HeatTransferCoefficient = 100.0;
+            double BlockTemperature = units::celcius(90.0);
         };
 
         struct FlameEvent {
@@ -107,6 +110,8 @@ class CombustionChamber : public atg_scs::ForceGenerator {
         double m_exhaustFlow;
 
         double m_crankcasePressure;
+        double m_heatTransferCoefficient;
+        double m_blockTemperature;
 
         double *m_pressure;
         double *m_pistonSpeed;

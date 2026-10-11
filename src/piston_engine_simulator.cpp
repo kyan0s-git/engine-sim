@@ -33,7 +33,7 @@ PistonEngineSimulator::~PistonEngineSimulator() {
     assert(m_crankshaftFrictionConstraints == nullptr);
     assert(m_exhaustFlowStagingBuffer == nullptr);
     assert(m_delayFilters == nullptr);
-    assert(m_antialiasingFilters == nullptr);
+    assert(m_crankshaftLinks == nullptr);
 }
 
 void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Transmission *transmission) {
@@ -97,16 +97,32 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
         }
     }
 
-    m_transmission->addToSystem(m_system, &m_vehicleMass, m_vehicle, m_engine);
-    m_vehicle->addToSystem(m_system, &m_vehicleMass);
-
-    m_vehicleDrag.initialize(&m_vehicleMass, m_vehicle);
-    m_system->addConstraint(&m_vehicleDrag);
-
     m_vehicleMass.reset();
     m_vehicleMass.m = 1.0;
     m_vehicleMass.I = 1.0;
     m_system->addRigidBody(&m_vehicleMass);
+
+    // When drivetrain flex is simulated the transmission drives an
+    // intermediate body (the driveshaft) which is connected to the vehicle's
+    // inertia through a torsional spring
+    atg_scs::RigidBody *transmissionOutput = &m_vehicleMass;
+    if (m_vehicle->isFlexSimulated()) {
+        m_driveshaft.reset();
+        m_driveshaft.m = 1.0;
+        m_driveshaft.I = DriveshaftInertia;
+        m_system->addRigidBody(&m_driveshaft);
+
+        transmissionOutput = &m_driveshaft;
+        m_vehicle->addToSystem(m_system, &m_vehicleMass, &m_driveshaft);
+    }
+    else {
+        m_vehicle->addToSystem(m_system, &m_vehicleMass);
+    }
+
+    m_transmission->addToSystem(m_system, &m_vehicleMass, m_vehicle, m_engine, transmissionOutput);
+
+    m_vehicleDrag.initialize(&m_vehicleMass, m_vehicle);
+    m_system->addConstraint(&m_vehicleDrag);
 
     for (int i = 0; i < cylinderCount; ++i) {
         Piston *piston = m_engine->getPiston(i);
@@ -159,7 +175,7 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
         m_linkConstraints[i * 2 + 1]
             .setLocalPosition2(journal_x, journal_y);
         m_linkConstraints[i * 2 + 1].m_ks = ks;
-        m_linkConstraints[i * 2 + 0].m_kd = kd;
+        m_linkConstraints[i * 2 + 1].m_kd = kd;
 
         piston->m_body.m = piston->getMass();
         piston->m_body.I = 1.0;
@@ -352,14 +368,20 @@ void PistonEngineSimulator::destroy() {
     if (m_cylinderWallConstraints != nullptr) delete[] m_cylinderWallConstraints;
     if (m_linkConstraints != nullptr) delete[] m_linkConstraints;
     if (m_crankshaftFrictionConstraints != nullptr) delete[] m_crankshaftFrictionConstraints;
+    if (m_crankshaftLinks != nullptr) delete[] m_crankshaftLinks;
     if (m_exhaustFlowStagingBuffer != nullptr) delete[] m_exhaustFlowStagingBuffer;
     if (m_system != nullptr) delete m_system;
+
+    // The rigid body system does not own its solver
+    delete m_sleSolver;
+    m_sleSolver = nullptr;
     if (m_delayFilters != nullptr) delete[] m_delayFilters;
 
     m_crankConstraints = nullptr;
     m_cylinderWallConstraints = nullptr;
     m_linkConstraints = nullptr;
     m_crankshaftFrictionConstraints = nullptr;
+    m_crankshaftLinks = nullptr;
     m_exhaustFlowStagingBuffer = nullptr;
     m_system = nullptr;
 
@@ -367,6 +389,8 @@ void PistonEngineSimulator::destroy() {
     m_transmission = nullptr;
     m_engine = nullptr;
     m_delayFilters = nullptr;
+
+    Simulator::destroy();
 }
 
 void PistonEngineSimulator::writeToSynthesizer() {
@@ -377,8 +401,6 @@ void PistonEngineSimulator::writeToSynthesizer() {
 
     const double attenuation = std::min(std::abs(filteredEngineSpeed()), 40.0) / 40.0;
     const double attenuation_3 = attenuation * attenuation * attenuation;
-
-    static double lastValveLift[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
     const double timestep = getTimestep();
     const int cylinderCount = m_engine->getCylinderCount();
@@ -398,8 +420,6 @@ void PistonEngineSimulator::writeToSynthesizer() {
                 1.0 * (chamber->m_exhaustRunnerAndPrimary.pressure() - units::pressure(1.0, units::atm))
                 + 0.1 * chamber->m_exhaustRunnerAndPrimary.dynamicPressure(1.0, 0.0)
                 + 0.1 * chamber->m_exhaustRunnerAndPrimary.dynamicPressure(-1.0, 0.0));
-
-        lastValveLift[i] = head->exhaustValveLift(piston->getCylinderIndex());
 
         const double delayedExhaustPulse =
             m_delayFilters[i].fast_f(exhaustFlow);

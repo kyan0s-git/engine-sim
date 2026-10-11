@@ -342,3 +342,9 @@ public node M52B28 {
             rev_limit: 8000 * units.rpm
         ))
 }
+
+public node main {
+    run(engine: M52B28())
+}
+
+main()

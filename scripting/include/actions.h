@@ -276,19 +276,22 @@ namespace es_script {
         CylinderBankNode *m_bank = nullptr;
     };
 
-    class k_28inH2ONode : public Node {
-        class k_28inH2ONodeOutput : public piranha::NodeOutput {
+    // Converts a flow rate measured on a flow bench (in SCFM) into the
+    // simulator's flow constant. The test conditions are given by `Function`.
+    template <double (*Function)(double)>
+    class FlowConstantNode : public Node {
+        class FlowConstantNodeOutput : public piranha::NodeOutput {
         public:
-            k_28inH2ONodeOutput() : NodeOutput(&piranha::FundamentalType::FloatType) {
+            FlowConstantNodeOutput() : NodeOutput(&piranha::FundamentalType::FloatType) {
                 m_input = 0.0;
             }
 
-            virtual ~k_28inH2ONodeOutput() {
+            virtual ~FlowConstantNodeOutput() {
                 /* void */
             }
 
             virtual void fullCompute(void *target) const {
-                *reinterpret_cast<double *>(target) = GasSystem::k_28inH2O(m_input);
+                *reinterpret_cast<double *>(target) = Function(m_input);
             }
 
             double getInput() const { return m_input; }
@@ -299,8 +302,8 @@ namespace es_script {
         };
 
     public:
-        k_28inH2ONode() { /* void */ }
-        virtual ~k_28inH2ONode() { /* void */ }
+        FlowConstantNode() { /* void */ }
+        virtual ~FlowConstantNode() { /* void */ }
 
     protected:
         virtual void registerInputs() {
@@ -322,59 +325,13 @@ namespace es_script {
         }
 
     protected:
-        k_28inH2ONodeOutput m_output;
+        FlowConstantNodeOutput m_output;
         double m_flowInput = 0.0;
     };
 
-    class k_CarbNode : public Node {
-        class k_CarbNodeOutput : public piranha::NodeOutput {
-        public:
-            k_CarbNodeOutput() : NodeOutput(&piranha::FundamentalType::FloatType) {
-                m_input = 0.0;
-            }
-
-            virtual ~k_CarbNodeOutput() {
-                /* void */
-            }
-
-            virtual void fullCompute(void *target) const {
-                *reinterpret_cast<double *>(target) = GasSystem::k_carb(m_input);
-            }
-
-            double getInput() const { return m_input; }
-            void setInput(double data) { m_input = data; }
-
-        protected:
-            double m_input;
-        };
-
-    public:
-        k_CarbNode() { /* void */ }
-        virtual ~k_CarbNode() { /* void */ }
-
-    protected:
-        virtual void registerInputs() {
-            addInput("flow", &m_flowInput);
-
-            Node::registerInputs();
-        }
-
-        virtual void registerOutputs() {
-            registerOutput(&m_output, "__out");
-
-            setPrimaryOutput("__out");
-        }
-
-        virtual void _evaluate() {
-            readAllInputs();
-
-            m_output.setInput(m_flowInput);
-        }
-
-    protected:
-        k_CarbNodeOutput m_output;
-        double m_flowInput = 0.0;
-    };
+    using k_28inH2ONode = FlowConstantNode<&GasSystem::k_28inH2O>;
+    using k_32inH2ONode = FlowConstantNode<&GasSystem::k_32inH2O>;
+    using k_CarbNode = FlowConstantNode<&GasSystem::k_carb>;
 
     class ConnectIgnitionWireNode : public Node {
     public:

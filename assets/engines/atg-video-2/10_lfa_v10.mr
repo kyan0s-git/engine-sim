@@ -454,7 +454,11 @@ private node lfa_transmission {
 }
 
 public node main {
-    set_engine(lr_gue_v10())
-    set_vehicle(lfa_vehicle())
-    set_transmission(lfa_transmission())
+    run(
+        engine: lr_gue_v10(),
+        transmission: lfa_transmission(),
+        vehicle: lfa_vehicle()
+    )
 }
+
+main()

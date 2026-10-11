@@ -757,6 +757,7 @@ void EngineSimApplication::loadEngine(
     audioParams.inputSampleNoise = static_cast<float>(engine->getInitialJitter());
     audioParams.airNoise = static_cast<float>(engine->getInitialNoise());
     audioParams.dF_F_mix = static_cast<float>(engine->getInitialHighFrequencyGain());
+    audioParams.convolution = static_cast<float>(engine->getInitialConvolution());
     m_simulator->synthesizer().setAudioParameters(audioParams);
 
     for (int i = 0; i < engine->getExhaustSystemCount(); ++i) {
@@ -1298,6 +1299,12 @@ void EngineSimApplication::processEngineInput() {
         else {
             m_infoCluster->setLogMessage("SHIFTED TO NEUTRAL");
         }
+    }
+
+    const bool braking = m_engine.IsKeyDown(ysKey::Code::OEM_Period);
+    if (m_vehicle != nullptr && braking != (m_vehicle->getBrakeLevel() > 0)) {
+        m_vehicle->setBrakeLevel(braking ? 1.0 : 0.0);
+        m_infoCluster->setLogMessage(braking ? "BRAKE APPLIED" : "BRAKE RELEASED");
     }
 
     if (m_engine.IsKeyDown(ysKey::Code::T)) {

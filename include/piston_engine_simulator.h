@@ -56,7 +56,12 @@ class PistonEngineSimulator : public Simulator {
         atg_scs::LineConstraint *m_cylinderWallConstraints;
         atg_scs::LinkConstraint *m_linkConstraints;
         atg_scs::RigidBody m_vehicleMass;
+        atg_scs::RigidBody m_driveshaft;
         VehicleDragConstraint m_vehicleDrag;
+
+        // Inertia of the transmission output/driveshaft when drivetrain flex
+        // is simulated [kg*m^2]
+        static constexpr double DriveshaftInertia = 0.05;
 
         std::chrono::steady_clock::time_point m_simulationStart;
         std::chrono::steady_clock::time_point m_simulationEnd;

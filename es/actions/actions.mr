@@ -152,6 +152,11 @@ public node k_28inH2O => __engine_sim__k_28inH2O {
     alias output __out [float];
 }
 
+public node k_32inH2O => __engine_sim__k_32inH2O {
+    input flow [float]: 1.0;
+    alias output __out [float];
+}
+
 public node k_carb => __engine_sim__k_carb {
     input flow [float]: 1.0;
     alias output __out [float];
@@ -235,4 +240,18 @@ public node add_gear {
 
 public node set_transmission => __engine_sim__set_transmission {
     input transmission [transmission];
+}
+
+// Convenience node that selects the engine, transmission and vehicle to
+// simulate. Call this at the end of an engine script, e.g.
+//
+//     run(engine: my_engine(), vehicle: my_car(), transmission: my_gearbox())
+public node run {
+    input engine;
+    input transmission: default_transmission();
+    input vehicle: vehicle();
+
+    set_engine(engine)
+    set_transmission(transmission)
+    set_vehicle(vehicle)
 }
