@@ -17,6 +17,7 @@ public:
     class Allocation : public ysDynamicArrayElement {
     public:
         void *m_allocation;
+        void (*m_release)(void *);
     };
 
     // File Information
@@ -72,6 +73,7 @@ protected:
         Type *ret = new Type[count];
         Allocation *track = m_allocationTracker.New();
         track->m_allocation = (void *)ret;
+        track->m_release = [](void *p) { delete[] static_cast<Type *>(p); };
 
         return ret;
     }

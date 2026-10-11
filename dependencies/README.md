@@ -38,8 +38,11 @@ that the project builds with MSVC, GCC and Clang on Windows, Linux and macOS.
 * Bug fixes: logger default constructor never initialized the object,
   `ysAudioDevice::DestroyAudioSource()` removed the source from the wrong
   list, registries with a zero initial capacity never grew, the window
-  system singleton was never cleared, and two shader statements were
-  invalid GLSL.
+  system singleton was never cleared, two shader statements were
+  invalid GLSL, memory allocated with `new T[]` was released through a
+  `void *` (skipping destructors; undefined behaviour), a `new`/`delete[]`
+  mismatch, missing virtual destructors on polymorphic base classes and an
+  uninitialized error code when reading unsupported tool file versions.
 
 ### piranha
 
@@ -48,6 +51,10 @@ that the project builds with MSVC, GCC and Clang on Windows, Linux and macOS.
   `-DPIRANHA_REGENERATE_PARSER=ON` after editing `flex-bison/`).
 * Replaced in-class explicit template specializations (an MSVC extension)
   with `if constexpr` so the library compiles with GCC.
+* Aligned allocations: the MSVC path passed the arguments of
+  `_aligned_malloc` in the wrong order and the memory was released with the
+  member `free()` (i.e. `delete` on a `void *`); now uses
+  `_aligned_malloc`/`_aligned_free` or `posix_memalign`/`free`.
 * Removed the demos, tests and documentation.
 
 ### simple-2d-constraint-solver, csv-io, direct-to-video

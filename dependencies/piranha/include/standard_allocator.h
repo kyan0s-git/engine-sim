@@ -10,6 +10,10 @@
 #include <iostream>
 #include <cstdlib>
 
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
+
 namespace piranha {
 
     class StandardAllocator {
@@ -39,11 +43,7 @@ namespace piranha {
                 }
             }
             else {
-#ifdef _MSC_VER
-                void *buffer = _aligned_malloc(alignment, sizeof(t_alloc) * n);
-#else
-                void *buffer = std::aligned_alloc(alignment, sizeof(t_alloc) * n);
-#endif
+                void *buffer = alignedAllocate(sizeof(t_alloc) * n, alignment);
                 
                 if (n == 1) {
                     newObject = TRACK(new (buffer) t_alloc);
@@ -95,13 +95,34 @@ namespace piranha {
                 memory[i].~t_alloc();
             }
 
-            free(FTRACK((void *)memory));
+            alignedRelease(FTRACK((void *)memory));
         }
 
         unsigned int getMaxUsage() const { return m_maxUsage; }
 
         int getLedger() const { return m_allocationLedger; }
         unsigned int getCurrentUsage() const { return m_currentUsage; }
+
+    protected:
+        static void *alignedAllocate(size_t size, size_t alignment) {
+            void *buffer = nullptr;
+#ifdef _MSC_VER
+            buffer = _aligned_malloc(size, alignment);
+#else
+            if (alignment < sizeof(void *)) alignment = sizeof(void *);
+            if (posix_memalign(&buffer, alignment, size) != 0) buffer = nullptr;
+#endif
+            if (buffer == nullptr) throw std::bad_alloc();
+            return buffer;
+        }
+
+        static void alignedRelease(void *buffer) {
+#ifdef _MSC_VER
+            _aligned_free(buffer);
+#else
+            std::free(buffer);
+#endif
+        }
 
     protected:
         // Statistics counters

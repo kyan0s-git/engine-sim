@@ -3,7 +3,7 @@
 
 #include "yds_base.h"
 
-#include <malloc.h>
+#include <cstdlib>
 #include <new>
 #include <stddef.h>
 #include <assert.h>

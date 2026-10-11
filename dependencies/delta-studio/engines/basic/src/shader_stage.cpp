@@ -39,7 +39,7 @@ ysError dbasic::ShaderStage::Destroy() {
 	for (int i = 0; i < bufferCount; ++i) {
 		YDS_NESTED_ERROR_CALL(m_device->DestroyGPUBuffer(m_bufferBindings[i].Buffer));
 		if (!m_bufferBindings[i].Preallocated) {
-			delete m_bufferBindings[i].Memory;
+			m_bufferBindings[i].Release(m_bufferBindings[i].Memory);
 		}
 	}
 

@@ -63,6 +63,14 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Validate bundled scripts (Linux)
+        if: runner.os == 'Linux' && matrix.cc == 'gcc'
+        # Compiles every bundled engine and theme script and runs each engine
+        # headlessly (radial.mr files are part libraries, not engines)
+        run: |
+          ./build/engine-sim-script-check --data . assets/main.mr assets/themes/*.mr \
+            $(find assets/engines -name '*.mr' ! -name 'radial.mr' | sort)
+
       - name: Smoke test (Linux)
         if: runner.os == 'Linux' && matrix.cc == 'gcc'
         run: |

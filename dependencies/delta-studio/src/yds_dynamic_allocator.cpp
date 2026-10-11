@@ -188,7 +188,7 @@ void ysDynamicAllocator::CreateBlocks(int maxBlocks) {
 
 void ysDynamicAllocator::Destroy() {
     if (!m_parent) {
-        delete [] m_data;
+        delete [] static_cast<char *>(m_data);
         delete [] m_blockPool;
         delete[] m_blocks;
     }
