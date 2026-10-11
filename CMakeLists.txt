@@ -394,6 +394,7 @@ if (ENGINE_SIM_BUILD_APP)
     install(DIRECTORY dependencies/delta-studio/engines/basic/shaders/glsl
         DESTINATION ${ENGINE_SIM_DATA_DESTINATION}/delta/shaders)
     install(FILES LICENSE README.md CHANGELOG.md DESTINATION .)
+    install(FILES docs/scripting.md DESTINATION docs)
 
     if (WIN32)
         # Ship the SDL DLL (when linked dynamically) and the MSVC runtime

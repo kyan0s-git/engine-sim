@@ -615,6 +615,12 @@ void EngineSimApplication::run() {
             m_showConsole = !m_showConsole;
         }
 
+        // While paused [Right] advances the simulation by one frame
+        if (m_engine.ProcessKeyDown(ysKey::Code::P)) {
+            m_paused = !m_paused;
+            m_infoCluster->setLogMessage(m_paused ? "PAUSED ([RIGHT] TO STEP)" : "RESUMED");
+        }
+
         if (m_engine.ProcessKeyDown(ysKey::Code::PageDown)) {
             cycleEngineScript(1);
         }

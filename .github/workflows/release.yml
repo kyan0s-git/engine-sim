@@ -7,7 +7,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: ['claude/tender-goldberg-egy0cl']  # TEMPORARY: packaging dry run
   workflow_dispatch:
 
 permissions:
@@ -93,6 +92,28 @@ jobs:
           STAGE="engine-sim-${{ steps.version.outputs.version }}-${{ matrix.name }}"
           echo "STAGE=$STAGE" >> "$GITHUB_ENV"
           cmake --install build --config Release --prefix "dist/$STAGE"
+
+      - name: Verify package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          test -f "dist/$STAGE/assets/main.mr"
+          test -f "dist/$STAGE/es/engine_sim.mr"
+          test -d "dist/$STAGE/delta/shaders/glsl"
+          # Only system libraries may be required at runtime
+          ldd "dist/$STAGE/bin/engine-sim-app"
+          if ldd "dist/$STAGE/bin/engine-sim-app" | grep -i "sdl\|not found"; then exit 1; fi
+          "dist/$STAGE/bin/engine-sim-app" --version
+
+      - name: Verify package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP="dist/$STAGE/Engine Simulator.app"
+          test -f "$APP/Contents/Resources/assets/main.mr"
+          test -f "$APP/Contents/Resources/es/engine_sim.mr"
+          lipo -info "$APP/Contents/MacOS/Engine Simulator"
+          otool -L "$APP/Contents/MacOS/Engine Simulator"
+          if otool -L "$APP/Contents/MacOS/Engine Simulator" | grep -i "sdl\|homebrew"; then exit 1; fi
+          "$APP/Contents/MacOS/Engine Simulator" --version
 
       - name: Sign app bundle (macOS)
         if: runner.os == 'macOS'

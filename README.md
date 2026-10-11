@@ -1,87 +1,176 @@
 # Engine Simulator
-![Alt text](docs/public/screenshots/screenshot_v01.png?raw=true)
----
-# Engine Simulator has moved!
+![Engine Simulator screenshot](docs/public/screenshots/screenshot_v01.png?raw=true)
 
-To get the newest releases of the game, [click here](https://github.com/Engine-Simulator/engine-sim-community-edition).
----
+A real-time internal combustion engine simulator **designed to produce engine audio and simulate engine response characteristics.** It is not a scientific tool and its figures shouldn't be used for engineering or tuning decisions.
 
-## What is this?
+Engine Simulator was created by [AngeTheGreat (Ange Yaghi)](https://github.com/ange-yaghi/engine-sim) for his YouTube videos. The original repository is no longer updated; this fork keeps the open source version alive. It runs natively on **Windows, Linux and macOS**, adds rotary engines and drivetrain features from the later releases, incorporates the script library improvements of the [Community Edition](https://github.com/Engine-Simulator/engine-sim-community-edition), and fixes a long list of bugs. See the [changelog](CHANGELOG.md) for details.
 
-This is a real-time internal combustion engine simulation **designed specifically to produce engine audio and simulate engine response characteristics.** It is NOT a scientific tool and cannot be expected to provide accurate figures for the purposes of engineering or engine tuning.
+## Download
 
-## How do I install it?
+Prebuilt packages are attached to each [release](https://github.com/kyan0s-git/engine-sim/releases):
 
-This is a code repository and might not look like other software that you're used to downloading and installing (if you're not familiar with programming). To download a ready-to-use version of the application, navigate to the [releases page](https://github.com/ange-yaghi/engine-sim/releases), find the most recent release (ex. `v0.1.5a`), click "Assets" and download the .zip file with a name that starts with `engine-sim-build`. Unzip this file, then run `bin/engine-sim-app.exe`. The simulator should then start normally.
+| Platform | Package | How to run |
+| :-- | :-- | :-- |
+| Windows (x64) | `engine-sim-<version>-windows-x64.zip` | Extract and run `bin/engine-sim-app.exe` |
+| Linux (x64) | `engine-sim-<version>-linux-x64.tar.gz` | Extract and run `bin/engine-sim-app` (or `engine-sim.desktop`) |
+| macOS (Apple Silicon and Intel) | `engine-sim-<version>-macos-universal.zip` | Extract and open `Engine Simulator.app` |
 
-Check out [our Frequently Asked Questions](https://github.com/ange-yaghi/engine-sim/wiki/Frequently-Asked-Questions) if you need more details.
+The packages are self-contained. A GPU driver supporting OpenGL 4.1 or newer is required. On macOS the app is not notarized, so the first time you open it right-click it and choose *Open*. The Linux package is built on Ubuntu 22.04 and works on distributions with glibc 2.35 or newer; it supports both X11 and Wayland.
 
-## How do I use it?
-
-The UI is extremely minimalistic and there are only a few controls used to interact with the engine:
+## Controls
 
 | Key/Input | Action |
-| :---: | :---: |
+| :---: | :--- |
 | A | Toggle ignition |
 | S | Hold for starter |
-| D | Enable dyno |
-| H | Enable RPM hold (see below for instructions) |
-| G + Scroll | Change hold speed |
-| F | Enter fullscreen mode |
-| I | Display dyno stats in the information panel |
-| Shift | Clutch (hold spacebar at the same time to slowly engage/disengage) |
-| Up Arrow | Up Gear | 
-| Down Arrow | Down Gear | 
+| Q, W, E, R | Throttle presets |
+| Space + Scroll | Fine throttle adjustment |
+| Up / Down Arrow | Shift up / down |
+| Shift | Hold to depress the clutch (hold Space as well to engage/disengage slowly) |
+| T / U | Gradually release / engage the clutch (Y holds the current position) |
+| . | Hold to apply the brakes |
+| D | Toggle the dyno |
+| H | Toggle RPM hold (see below) |
+| G + Scroll | Change the hold speed |
 | Z + Scroll | Volume |
-| X + Scroll | Convolution Level |
+| X + Scroll | Convolution level |
 | C + Scroll | High frequency gain |
 | V + Scroll | Low frequency noise |
 | B + Scroll | High frequency noise |
 | N + Scroll | Simulation frequency |
-| M | Increase view layer |
-| , | Decrease view layer |
-| Enter | Reload engine script |
-| Escape | Exit the program |
-| Q, W, E, R | Change throttle position |
-| Space + Scroll | Fine throttle adjustment |
-| 1, 2, 3, 4, 5 | Simulation time warp |
-| Tab | Change screen |
+| M / , | Show more / fewer layers of the engine |
+| F1 / F2 / F3 | Rotate the view / reset the rotation |
+| 1 - 5 | Slow motion (1/10 to 1/1000 speed) |
+| P | Pause; Right Arrow then advances one frame |
+| Page Up / Page Down | Load the previous / next bundled engine |
+| [ / ] | Previous / next theme |
+| Enter | Reload the current scripts |
+| F5 | Show the console (loaded scripts and script errors) |
+| Tab | Change screen layout |
+| F | Toggle fullscreen |
+| Escape | Exit |
+
+The last engine and theme you selected are remembered between sessions.
 
 ### Using the RPM hold
-The RPM hold feature will hold the engine at a specific RPM and also measure the engine's horsepower and torque at that RPM. You can enable RPM hold by pressing the `H` key. **You must then enable the dynomometer** (press the `D` key) in order for the RPM hold to take effect. To change the hold speed, hold the `G` key and scroll with the mouse wheel. The RPM hold will be shown on the `DYNO. SPEED` gauge in the lower left of the screen.
+The RPM hold holds the engine at a specific speed and measures its power and torque there. Press `H` to enable the hold, then **enable the dyno** with `D` for the hold to take effect. Hold `G` and scroll to change the hold speed, which is shown on the `DYNO. SPEED` gauge.
 
-## Why is the code so sloppy?
-
-I wrote this to demo in a [YouTube video](https://youtu.be/RKT-sKtR970), not as a real product. If you would like it to become a usable product please reach out to me or join my Discord (link can be found in the description of the aforementioned YouTube video). I use this codebase for my own purposes and so it might change frequently and without warning.
-
-## How do I build it? (Ignore this section if you're not a developer!)
-**Note: this project currently only builds on Windows!**
-
-### Step 1 - Clone the repository
-```git clone --recurse-submodules https://github.com/ange-yaghi/engine-sim```
-
-### Step 2 - Install CMake
-Install the latest version of CMake [here](https://cmake.org/) if it's not already installed.
-
-### Step 3 - Install Dependencies
-You will need to install the following dependencies and CMake will need to be able to locate them (ie. they need to be listed on your PATH):
-
-    1. SDL2
-    2. SDL2_image
-    3. Boost (make sure to build the optional dependencies)
-    4. Flex and Bison
-
-### Step 4 - Build and Run
-From the root directory of the project, run the following commands:
+## Command line
 
 ```
-mkdir build
-cd build
-cmake ..
-cmake --build .
+engine-sim-app [options] [engine.mr]
+
+  --engine <file>     Engine script to load (same as passing it positionally)
+  --theme <file>      Theme script to load
+  --data <dir>        Directory containing the assets/ and es/ folders
+  --fullscreen        Start in fullscreen mode
+  --windowed          Start in windowed mode
+  --version           Print the version and exit
 ```
 
-If these steps are successful, a Visual Studio solution will be generated in ```build```. You can open this project with Visual Studio and then run the ```engine-sim-app``` project. If you encounter an error telling you that you're missing DLLs, you will have to copy those DLLs to your EXE's directory.
+The data directory is found automatically next to the executable (or inside the macOS app bundle). It can also be set with the `ENGINE_SIM_DATA_ROOT` environment variable.
+
+## Files and folders
+
+| Location | Contents |
+| :-- | :-- |
+| `assets/main.mr` | Default script, loaded when no engine has been selected yet |
+| `assets/engines/` | Bundled engines (piston and rotary) |
+| `assets/themes/` | Color and unit themes |
+| `es/` | The scripting library (`engine_sim.mr`) and the part library |
+| User data folder | `session.ini` (last engine and theme) and `error_log.log`. On Windows `%APPDATA%\EngineSimulator\engine-sim`, on Linux `~/.local/share/EngineSimulator/engine-sim`, on macOS `~/Library/Application Support/EngineSimulator/engine-sim` |
+
+Scripts placed in `assets/engines` or `assets/themes` inside the user data folder also show up when cycling engines and themes, and `import` statements search that `assets` folder too.
+
+## Making your own engines
+
+Engines, vehicles, transmissions and themes are described in a small scripting language. Start with [docs/scripting.md](docs/scripting.md), which covers the structure of an engine script, units, the most important parameters, rotary engines and themes. The bundled engines in `assets/engines` are good starting points.
+
+An engine script ends by selecting what to simulate:
+
+```
+public node main {
+    run(
+        engine: my_engine(),
+        transmission: my_transmission(),   // optional
+        vehicle: my_vehicle()              // optional
+    )
+}
+
+main()
+```
+
+Scripts can be loaded with `--engine`, by changing `assets/main.mr`, or by pressing Page Up / Page Down in the application. If a script has errors, press F5 to see them.
+
+## Building from source
+
+The project uses CMake (3.16+) and a C++17 compiler. All third-party code is included in `dependencies/` (see [dependencies/README.md](dependencies/README.md)); only SDL2 is needed from the system, or it can be downloaded and linked statically with `-DENGINE_SIM_BUNDLED_SDL=ON`.
+
+### Linux
+
+```
+sudo apt install build-essential cmake ninja-build libsdl2-dev libgl-dev   # Debian/Ubuntu
+sudo dnf install gcc-c++ cmake ninja-build SDL2-devel mesa-libGL-devel     # Fedora
+
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/bin/engine-sim-app
+```
+
+### macOS
+
+```
+brew install cmake ninja sdl2
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+open "build/bin/Engine Simulator.app"
+```
+
+### Windows
+
+Install Visual Studio 2022 (with the C++ workload) and CMake, then from a developer command prompt:
+
+```
+cmake -S . -B build -DENGINE_SIM_BUNDLED_SDL=ON
+cmake --build build --config Release
+build\bin\engine-sim-app.exe
+```
+
+### Build options
+
+| Option | Default | Description |
+| :-- | :-- | :-- |
+| `ENGINE_SIM_BUILD_APP` | `ON` | Build the graphical application (turn off for headless tools only) |
+| `ENGINE_SIM_BUILD_TESTS` | `ON` | Build the unit tests (uses the system GoogleTest or downloads it) |
+| `ENGINE_SIM_BUNDLED_SDL` | `OFF` | Download SDL2 and link it statically |
+| `PIRANHA_ENABLED` | `ON` | Scripting support |
+| `PIRANHA_REGENERATE_PARSER` | `OFF` | Regenerate the script parser with Flex and Bison |
+| `DISCORD_ENABLED` | `OFF` | Discord rich presence (Windows only) |
+| `DTV` | `OFF` | Video capture with the Insert key (requires FFmpeg) |
+
+`cmake --install build --prefix <dir>` produces the same layout as the release packages.
+
+### Tests and script validation
+
+```
+ctest --test-dir build --output-on-failure
+./build/engine-sim-script-check --require-running assets/engines/rotary/two_rotor_13b.mr
+```
+
+`engine-sim-script-check` compiles scripts and runs each engine headlessly (starter, then throttle) without opening a window. It is used by CI to make sure every bundled engine still loads and runs. Use `--trace` to print the state of the first cylinder every frame while developing an engine, and `--crank <seconds>` to crank for longer.
+
+## Releases
+
+Pushing a tag such as `v0.2.0` runs the [Release workflow](.github/workflows/release.yml), which builds the Windows, Linux and macOS packages and publishes a GitHub release using the matching section of `CHANGELOG.md` as release notes. Tags containing a hyphen (e.g. `v0.3.0-beta1`) are published as pre-releases. To cut a release:
+
+1. Update `VERSION` in the `project()` call of `CMakeLists.txt` and add a section to `CHANGELOG.md`
+2. Commit, then `git tag v<version>` and `git push origin v<version>`
+
+Every push is also built and tested on all three platforms by the [Build workflow](.github/workflows/build.yml).
+
+## Credits
+
+Engine Simulator was created by Ange Yaghi ([YouTube](https://www.youtube.com/c/angethegreat)). The script library additions from the Community Edition are the work of its contributors. Third party components and their licenses are listed in [dependencies/README.md](dependencies/README.md).
 
 ## Patreon Supporters
 
