@@ -28,6 +28,7 @@
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -132,6 +133,8 @@ EngineSimApplication::EngineSimApplication() {
     m_loadSimulationCluster = nullptr;
     m_mixerCluster = nullptr;
     m_infoCluster = nullptr;
+    m_console = nullptr;
+    m_showConsole = false;
     m_iceEngine = nullptr;
     m_mainRenderTarget = nullptr;
 
@@ -558,6 +561,11 @@ void EngineSimApplication::process(float frame_dt) {
 }
 
 void EngineSimApplication::render() {
+    if (m_showConsole) {
+        m_uiManager.render();
+        return;
+    }
+
     for (SimulationObject *object : m_objects) {
         object->generateGeometry();
     }
@@ -601,6 +609,31 @@ void EngineSimApplication::run() {
 
         if (m_engine.ProcessKeyDown(ysKey::Code::Return)) {
             reloadScripts();
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::F5)) {
+            m_showConsole = !m_showConsole;
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::PageDown)) {
+            cycleEngineScript(1);
+        }
+        else if (m_engine.ProcessKeyDown(ysKey::Code::PageUp)) {
+            cycleEngineScript(-1);
+        }
+
+        if (m_engine.ProcessKeyDown(ysKey::Code::OEM_6)) {
+            cycleThemeScript(1);
+        }
+        else if (m_engine.ProcessKeyDown(ysKey::Code::OEM_4)) {
+            cycleThemeScript(-1);
+        }
+
+        // While the console is open the arrow keys scroll it instead of
+        // changing gears
+        if (m_showConsole && m_console != nullptr) {
+            if (m_engine.ProcessKeyDown(ysKey::Code::Up)) m_console->scroll(-1);
+            if (m_engine.ProcessKeyDown(ysKey::Code::Down)) m_console->scroll(1);
         }
 
         if (m_engine.ProcessKeyDown(ysKey::Code::Tab)) {
@@ -1091,6 +1124,117 @@ void EngineSimApplication::reloadScripts() {
     }
 }
 
+namespace {
+    // Engine scripts call main() or run() at the top level; files without
+    // such a call are part libraries (e.g. radial.mr)
+    bool isRunnableScript(const fs::path &path) {
+        std::ifstream file(path);
+        std::string line;
+        while (std::getline(file, line)) {
+            const size_t start = line.find_first_not_of(" \t");
+            if (start != 0) continue;
+            if (line.compare(0, 6, "main()") == 0 || line.compare(0, 4, "run(") == 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    std::vector<std::string> findScripts(
+        const std::vector<fs::path> &directories,
+        bool recursive,
+        bool runnableOnly)
+    {
+        std::vector<std::string> scripts;
+        for (const fs::path &directory : directories) {
+            std::error_code ec;
+            if (!fs::is_directory(directory, ec)) continue;
+
+            auto consider = [&](const fs::directory_entry &entry) {
+                if (!entry.is_regular_file() || entry.path().extension() != ".mr") return;
+                if (runnableOnly && !isRunnableScript(entry.path())) return;
+                scripts.push_back(normalizePath(entry.path()));
+            };
+
+            if (recursive) {
+                for (const auto &entry : fs::recursive_directory_iterator(directory, ec)) consider(entry);
+            }
+            else {
+                for (const auto &entry : fs::directory_iterator(directory, ec)) consider(entry);
+            }
+        }
+
+        std::sort(scripts.begin(), scripts.end());
+        scripts.erase(std::unique(scripts.begin(), scripts.end()), scripts.end());
+        return scripts;
+    }
+
+    int nextIndex(const std::vector<std::string> &list, const std::string &current, int direction) {
+        const int n = static_cast<int>(list.size());
+        const auto it = std::find(list.begin(), list.end(), current);
+        if (it == list.end()) return direction > 0 ? 0 : n - 1;
+
+        const int i = static_cast<int>(it - list.begin());
+        return ((i + direction) % n + n) % n;
+    }
+} /* namespace */
+
+std::vector<std::string> EngineSimApplication::findEngineScripts() const {
+    std::vector<std::string> scripts = findScripts(
+        { fs::path(m_assetPath) / "engines", fs::path(m_userDataPath) / "assets" / "engines" },
+        true,
+        true);
+
+    const std::string mainScript = normalizePath(fs::path(m_assetPath) / "main.mr");
+    if (fileExists(mainScript)) {
+        scripts.insert(scripts.begin(), mainScript);
+    }
+
+    return scripts;
+}
+
+std::vector<std::string> EngineSimApplication::findThemeScripts() const {
+    return findScripts(
+        { fs::path(m_assetPath) / "themes", fs::path(m_userDataPath) / "assets" / "themes" },
+        false,
+        false);
+}
+
+void EngineSimApplication::cycleEngineScript(int direction) {
+    const std::vector<std::string> scripts = findEngineScripts();
+    if (scripts.empty()) {
+        m_infoCluster->setLogMessage("No engine scripts found");
+        return;
+    }
+
+    const int index = nextIndex(scripts, m_engineScriptPath, direction);
+    loadEngineScript(scripts[index]);
+
+    if (!m_scriptErrors) {
+        m_infoCluster->setLogMessage(
+            "[" + std::to_string(index + 1) + "/" + std::to_string(scripts.size()) + "] "
+            + fs::path(scripts[index]).filename().string());
+    }
+}
+
+void EngineSimApplication::cycleThemeScript(int direction) {
+    std::vector<std::string> themes = findThemeScripts();
+
+    // The first entry restores the theme set by the engine script (if any)
+    themes.insert(themes.begin(), std::string());
+
+    const int index = nextIndex(themes, m_themeScriptPath, direction);
+    loadThemeScript(themes[index]);
+
+    if (!m_scriptErrors) {
+        m_infoCluster->setLogMessage(
+            themes[index].empty()
+                ? std::string("Theme: script default")
+                : "Theme: " + fs::path(themes[index]).stem().string());
+    }
+}
+
 void EngineSimApplication::processEngineInput() {
     if (m_iceEngine == nullptr) {
         return;
@@ -1440,6 +1584,24 @@ void EngineSimApplication::renderScene() {
         m_infoCluster->setVisible(false);
     }
 
+    {
+        const Bounds windowBounds((float)screenWidth, (float)screenHeight, { 0, (float)screenHeight });
+        m_console->m_bounds = windowBounds.inset(40.0f);
+        m_console->setVisible(m_showConsole);
+        if (m_showConsole) {
+            // Text is drawn in a separate pass so the console's background
+            // can't cover the other panels; hide them instead
+            m_engineView->setVisible(false);
+            m_rightGaugeCluster->setVisible(false);
+            m_oscCluster->setVisible(false);
+            m_performanceCluster->setVisible(false);
+            m_loadSimulationCluster->setVisible(false);
+            m_mixerCluster->setVisible(false);
+            m_infoCluster->setVisible(false);
+            m_console->activate();
+        }
+    }
+
     const float cameraAspectRatio =
         m_engineView->m_bounds.width() / m_engineView->m_bounds.height();
     m_engine.GetDevice()->ResizeRenderTarget(
@@ -1490,6 +1652,9 @@ void EngineSimApplication::refreshUserInterface() {
     m_loadSimulationCluster = m_uiManager.getRoot()->addElement<LoadSimulationCluster>();
     m_mixerCluster = m_uiManager.getRoot()->addElement<MixerCluster>();
     m_infoCluster = m_uiManager.getRoot()->addElement<InfoCluster>();
+
+    // Added last so that it's drawn on top of everything else
+    m_console = m_uiManager.getRoot()->addElement<ConsoleOverlay>();
 
     m_infoCluster->setEngine(m_iceEngine);
     m_rightGaugeCluster->m_simulator = m_simulator;

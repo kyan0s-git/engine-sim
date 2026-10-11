@@ -20,6 +20,7 @@
 #include "load_simulation_cluster.h"
 #include "mixer_cluster.h"
 #include "info_cluster.h"
+#include "console_overlay.h"
 #include "application_settings.h"
 #include "transmission.h"
 
@@ -67,6 +68,12 @@ class EngineSimApplication {
         void loadEngineScript(const std::string &path);
         void loadThemeScript(const std::string &path);
         void reloadScripts();
+
+        // Bundled and user supplied engine and theme scripts
+        std::vector<std::string> findEngineScripts() const;
+        std::vector<std::string> findThemeScripts() const;
+        void cycleEngineScript(int direction);
+        void cycleThemeScript(int direction);
 
         const std::string &getEngineScriptPath() const { return m_engineScriptPath; }
         const std::string &getThemeScriptPath() const { return m_themeScriptPath; }
@@ -208,6 +215,8 @@ class EngineSimApplication {
         LoadSimulationCluster *m_loadSimulationCluster;
         MixerCluster *m_mixerCluster;
         InfoCluster *m_infoCluster;
+        ConsoleOverlay *m_console;
+        bool m_showConsole;
         SimulationObject::ViewParameters m_viewParameters;
 
         bool m_paused;

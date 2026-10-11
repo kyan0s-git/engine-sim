@@ -25,7 +25,7 @@ public node two_rotor_13b {
     alias output __out: engine;
 
     wankel_engine engine(
-        name: "Two-Rotor 1.3L",
+        name: "Twin Rotor",
         starter_torque: 60 * units.lb_ft,
         starter_speed: 300 * units.rpm,
         redline: 8500 * units.rpm,

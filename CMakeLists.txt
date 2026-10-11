@@ -260,6 +260,7 @@ if (ENGINE_SIM_BUILD_APP)
         src/ui_button.cpp
         src/ui_utilities.cpp
         src/combustion_chamber_object.cpp
+        src/console_overlay.cpp
         src/wankel_rotor_object.cpp
         src/oscilloscope.cpp
         src/shaders.cpp
@@ -295,6 +296,7 @@ if (ENGINE_SIM_BUILD_APP)
         include/ui_button.h
         include/ui_utilities.h
         include/combustion_chamber_object.h
+        include/console_overlay.h
         include/wankel_rotor_object.h
         include/oscilloscope.h
         include/shaders.h
