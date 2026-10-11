@@ -101,7 +101,7 @@ jobs:
           test -d "dist/$STAGE/delta/shaders/glsl"
           # Only system libraries may be required at runtime
           ldd "dist/$STAGE/bin/engine-sim-app"
-          if ldd "dist/$STAGE/bin/engine-sim-app" | grep -i "sdl\|not found"; then exit 1; fi
+          if ldd "dist/$STAGE/bin/engine-sim-app" | grep -iE "sdl|not found"; then exit 1; fi
           "dist/$STAGE/bin/engine-sim-app" --version
 
       - name: Verify package (macOS)
@@ -112,7 +112,7 @@ jobs:
           test -f "$APP/Contents/Resources/es/engine_sim.mr"
           lipo -info "$APP/Contents/MacOS/Engine Simulator"
           otool -L "$APP/Contents/MacOS/Engine Simulator"
-          if otool -L "$APP/Contents/MacOS/Engine Simulator" | grep -i "sdl\|homebrew"; then exit 1; fi
+          if otool -L "$APP/Contents/MacOS/Engine Simulator" | grep -iE "sdl|homebrew"; then exit 1; fi
           "$APP/Contents/MacOS/Engine Simulator" --version
 
       - name: Sign app bundle (macOS)
