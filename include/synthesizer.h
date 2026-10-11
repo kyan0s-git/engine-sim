@@ -14,6 +14,8 @@
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
+#include <vector>
 
 class Synthesizer {
     public:
@@ -86,7 +88,6 @@ class Synthesizer {
         void setInputSampleRate(double sampleRate);
         double getInputSampleRate() const { return m_inputSampleRate; }
 
-        int16_t renderAudio(int inputOffset);
 
         double getLevelerGain();
         AudioParameters getAudioParameters();
@@ -119,6 +120,25 @@ class Synthesizer {
         std::condition_variable m_cv0;
 
         ProcessingFilters *m_filters;
+
+    protected:
+        // Fast, thread-local white noise in the range [-1, 1]
+        inline float noise() {
+            m_noiseState ^= m_noiseState << 13;
+            m_noiseState ^= m_noiseState >> 17;
+            m_noiseState ^= m_noiseState << 5;
+            return static_cast<float>(m_noiseState) * (2.0f / 4294967295.0f) - 1.0f;
+        }
+
+        void renderBlock(int n, const AudioParameters &parameters);
+
+        uint32_t m_noiseState;
+
+        // Scratch buffers used while rendering a block of audio
+        std::vector<float> m_channelInput;
+        std::vector<float> m_channelOutput;
+        std::vector<float> m_mixBuffer;
+        std::vector<int16_t> m_renderedAudio;
 };
 
 #endif /* ATG_ENGINE_SIM_ENGINE_SYNTHESIZER_H */

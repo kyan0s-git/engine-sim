@@ -12,12 +12,14 @@ option(ENGINE_SIM_BUILD_APP "Build the graphical application" ON)
 option(ENGINE_SIM_BUILD_TESTS "Build the unit tests (downloads GoogleTest)" ON)
 option(PIRANHA_ENABLED "Enable scripting input" ON)
 option(DTV "Enable video output (requires FFmpeg)" OFF)
+option(ENGINE_SIM_BUNDLED_SDL "Download SDL2 and link it statically (self-contained release builds)" OFF)
 
-# Discord Rich Presence is only available with the bundled prebuilt MSVC library
+# Discord Rich Presence is only available through the bundled prebuilt library
+# which requires MSVC with the release (/MD) runtime
 if (MSVC)
-    option(DISCORD_ENABLED "Enable Discord Rich Presence" ON)
+    option(DISCORD_ENABLED "Enable Discord Rich Presence (MSVC release builds only)" OFF)
 else()
-    set(DISCORD_ENABLED OFF CACHE BOOL "Enable Discord Rich Presence (Windows/MSVC only)" FORCE)
+    set(DISCORD_ENABLED OFF CACHE BOOL "Enable Discord Rich Presence (MSVC release builds only)" FORCE)
 endif()
 
 # Default to an optimized build; the simulation is far too slow in Debug
@@ -39,6 +41,24 @@ endif()
 
 # ========================================================
 # Dependencies
+
+if (ENGINE_SIM_BUILD_APP AND ENGINE_SIM_BUNDLED_SDL)
+    include(FetchContent)
+
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_STATIC_PIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "" FORCE)
+    set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+    set(SDL2_DISABLE_UNINSTALL ON CACHE BOOL "" FORCE)
+
+    FetchContent_Declare(
+        SDL2
+        URL https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz
+        URL_HASH SHA256=5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(SDL2)
+endif()
 
 add_subdirectory(dependencies)
 
@@ -280,6 +300,8 @@ if (ENGINE_SIM_BUILD_APP)
         # SDL2main provides WinMain when building a GUI subsystem executable
         if (TARGET SDL2::SDL2main)
             target_link_libraries(engine-sim-app PRIVATE SDL2::SDL2main)
+        elseif (TARGET SDL2main)
+            target_link_libraries(engine-sim-app PRIVATE SDL2main)
         endif()
     endif()
 
@@ -304,6 +326,16 @@ if (ENGINE_SIM_BUILD_APP)
         @ONLY)
     target_include_directories(engine-sim-app PRIVATE ${PROJECT_BINARY_DIR}/generated)
 
+    if (APPLE)
+        set_target_properties(engine-sim-app PROPERTIES
+            MACOSX_BUNDLE TRUE
+            OUTPUT_NAME "Engine Simulator"
+            MACOSX_BUNDLE_INFO_PLIST ${PROJECT_SOURCE_DIR}/packaging/macos/Info.plist.in
+            MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.engine-sim.community"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+            MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
+    endif()
+
     # Put the executable in <build>/bin so that the data directory layout
     # matches the packaged release (bin/, assets/, es/, delta/)
     set_target_properties(engine-sim-app PROPERTIES
@@ -316,18 +348,52 @@ if (ENGINE_SIM_BUILD_APP)
     # ====================================================
     # Installation / packaging layout
     #
-    #   <prefix>/bin/engine-sim-app
-    #   <prefix>/assets/...
-    #   <prefix>/es/...
+    # Windows and Linux:              macOS:
+    #   <prefix>/bin/engine-sim-app     <prefix>/Engine Simulator.app/
+    #   <prefix>/assets/...               Contents/MacOS/Engine Simulator
+    #   <prefix>/es/...                   Contents/Resources/{assets,es,delta}
     #   <prefix>/delta/{fonts,shaders}
 
-    install(TARGETS engine-sim-app RUNTIME DESTINATION bin)
-    install(DIRECTORY assets/ DESTINATION assets
+    if (APPLE)
+        set(ENGINE_SIM_DATA_DESTINATION "Engine Simulator.app/Contents/Resources")
+    else()
+        set(ENGINE_SIM_DATA_DESTINATION ".")
+    endif()
+
+    install(TARGETS engine-sim-app
+        RUNTIME DESTINATION bin
+        BUNDLE DESTINATION .)
+    install(DIRECTORY assets/ DESTINATION ${ENGINE_SIM_DATA_DESTINATION}/assets
         PATTERN "*.dia" EXCLUDE)
-    install(DIRECTORY es/ DESTINATION es)
-    install(DIRECTORY dependencies/delta-studio/engines/basic/fonts DESTINATION delta)
-    install(DIRECTORY dependencies/delta-studio/engines/basic/shaders/glsl DESTINATION delta/shaders)
+    install(DIRECTORY es/ DESTINATION ${ENGINE_SIM_DATA_DESTINATION}/es)
+    install(DIRECTORY dependencies/delta-studio/engines/basic/fonts
+        DESTINATION ${ENGINE_SIM_DATA_DESTINATION}/delta)
+    install(DIRECTORY dependencies/delta-studio/engines/basic/shaders/glsl
+        DESTINATION ${ENGINE_SIM_DATA_DESTINATION}/delta/shaders)
     install(FILES LICENSE README.md CHANGELOG.md DESTINATION .)
+
+    if (WIN32)
+        # Ship the SDL DLL (when linked dynamically) and the MSVC runtime
+        if (NOT ENGINE_SIM_BUNDLED_SDL AND TARGET SDL2::SDL2 AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21)
+            install(IMPORTED_RUNTIME_ARTIFACTS SDL2::SDL2 DESTINATION bin)
+        endif()
+
+        set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION bin)
+        set(CMAKE_INSTALL_UCRT_LIBRARIES FALSE)
+        include(InstallRequiredSystemLibraries)
+
+        # Copy the SDL DLL next to the executable for development builds
+        if (NOT ENGINE_SIM_BUNDLED_SDL AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.21)
+            add_custom_command(TARGET engine-sim-app POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:engine-sim-app> $<TARGET_FILE_DIR:engine-sim-app>
+                COMMAND_EXPAND_LISTS)
+        endif()
+    endif()
+
+    if (UNIX AND NOT APPLE)
+        install(FILES packaging/linux/engine-sim.desktop DESTINATION .)
+    endif()
 endif()
 
 # ========================================================

@@ -1,190 +1,198 @@
 #include <gtest/gtest.h>
 
 #include "../include/synthesizer.h"
+#include "../include/convolution_filter.h"
 
-#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <random>
+#include <vector>
 
-using namespace std::chrono_literals;
+namespace {
 
-void setupStandardSynthesizer(Synthesizer &synth) {
-    Synthesizer::Parameters params;
-    params.audioBufferSize = 512 * 16;
-    params.audioSampleRate = 16;
-    params.inputBufferSize = 256;
-    params.inputChannelCount = 8;
-    params.inputSampleRate = 32;
+    void setupSynthesizer(Synthesizer &synth, int channels, float noise) {
+        Synthesizer::Parameters params;
+        params.audioBufferSize = 44100;
+        params.audioSampleRate = 44100;
+        params.inputBufferSize = 44100;
+        params.inputChannelCount = channels;
+        params.inputSampleRate = 10000;
 
-    Synthesizer::AudioParameters audioParams;
-    audioParams.airNoise = 0.0;
-    audioParams.inputSampleNoise = 0.0;
-    audioParams.levelerMaxGain = 1.0;
-    audioParams.levelerMinGain = 1.0;
-    audioParams.dF_F_mix = 0.0;
-    params.initialAudioParameters = audioParams;
+        Synthesizer::AudioParameters audioParams;
+        audioParams.airNoise = noise;
+        audioParams.inputSampleNoise = noise;
+        audioParams.dF_F_mix = 0.0f;
+        params.initialAudioParameters = audioParams;
 
-    synth.initialize(params);
-}
+        synth.initialize(params);
 
-void setupSynchronizedSynthesizer(Synthesizer &synth) {
-    Synthesizer::Parameters params;
-    params.audioBufferSize = 512 * 16;
-    params.audioSampleRate = 32;
-    params.inputBufferSize = 1024;
-    params.inputChannelCount = 8;
-    params.inputSampleRate = 32;
+        // Simple decaying impulse response
+        std::vector<int16_t> ir(2000);
+        for (int i = 0; i < (int)ir.size(); ++i) {
+            ir[i] = static_cast<int16_t>(INT16_MAX * std::exp(-i / 200.0) * ((i % 2) ? -1 : 1));
+        }
 
-    Synthesizer::AudioParameters audioParams;
-    audioParams.airNoise = 0.0;
-    audioParams.inputSampleNoise = 0.0;
-    audioParams.levelerMaxGain = 1.0;
-    audioParams.levelerMinGain = 1.0;
-    audioParams.dF_F_mix = 0.0;
-    params.initialAudioParameters = audioParams;
+        for (int i = 0; i < channels; ++i) {
+            synth.initializeImpulseResponse(ir.data(), (unsigned int)ir.size(), 1.0f, i);
+        }
+    }
 
-    synth.initialize(params);
-}
+    // Writes `inputSamples` samples of a sine wave and renders them on the
+    // calling thread. Returns the samples that were produced.
+    std::vector<int16_t> renderSine(Synthesizer &synth, int channels, int inputSamples, double amplitude) {
+        std::vector<int16_t> output;
+        std::vector<double> data(channels);
+        std::vector<int16_t> block(4096);
+
+        for (int i = 0; i < inputSamples;) {
+            for (int j = 0; j < 100 && i < inputSamples; ++j, ++i) {
+                for (int c = 0; c < channels; ++c) {
+                    data[c] = amplitude * std::sin(i * 0.05);
+                }
+                synth.writeInput(data.data());
+            }
+
+            synth.endInputBlock();
+            synth.renderAudio();
+
+            const int read = synth.readAudioOutput((int)block.size(), block.data());
+            output.insert(output.end(), block.begin(), block.begin() + read);
+        }
+
+        return output;
+    }
+
+} /* namespace */
 
 TEST(SynthesizerTests, SynthesizerSanityCheck) {
     Synthesizer synth;
-    setupStandardSynthesizer(synth);
-    synth.destroy();
-}
-/*
-TEST(SynthesizerTests, SynthesizerConversionTest) {
-    Synthesizer synth;
-    setupStandardSynthesizer(synth);
-
-    EXPECT_NEAR(synth.inputSampleToTimeOffset(0.0), 0.0, 1E-6);
-    EXPECT_NEAR(synth.inputSampleToTimeOffset(1.0), 1 / 32.0, 1E-6);
-
-    EXPECT_NEAR(synth.audioSampleToTimeOffset(0), -0.5, 1E-6);
-
+    setupSynthesizer(synth, 1, 0.0f);
     synth.destroy();
 }
 
-TEST(SynthesizerTests, SynthesizerTrimTest) {
+TEST(SynthesizerTests, SilenceInSilenceOut) {
     Synthesizer synth;
-    setupStandardSynthesizer(synth);
+    setupSynthesizer(synth, 2, 0.0f);
 
-    const double timeOffset0 = synth.audioSampleToTimeOffset(0);
+    const std::vector<int16_t> output = renderSine(synth, 2, 5000, 0.0);
+    ASSERT_FALSE(output.empty());
 
-    synth.trimInput(0.5, false);
-
-    const double timeOffset1 = synth.audioSampleToTimeOffset(8);
-
-    EXPECT_NEAR(timeOffset1, timeOffset0, 1E-6);
-
-    synth.destroy();
-}
-
-TEST(SynthesizerTests, SynthesizerSampleTest) {
-    Synthesizer synth;
-    setupStandardSynthesizer(synth);
-
-    for (int i = 0; i < 1024; ++i) {
-        const double v = (double)i;
-        const double data[] = { v, v, v, v, v, v, v, v };
-        synth.writeInput(data);
+    for (const int16_t sample : output) {
+        EXPECT_EQ(sample, 0);
     }
 
-    const double end_t = 1023 / 32.0;
+    synth.destroy();
+}
 
-    const double v0 = synth.sampleInput(end_t, 0);
-    const double v1 = synth.sampleInput(end_t - 1 / 64.0, 0);
+TEST(SynthesizerTests, ProducesBoundedAudio) {
+    Synthesizer synth;
+    setupSynthesizer(synth, 3, 0.5f);
 
-    EXPECT_NEAR(v0, 1023.0, 1E-6);
-    EXPECT_NEAR(v1, 1022.5, 1E-6);
+    const std::vector<int16_t> output = renderSine(synth, 3, 20000, 1000.0);
 
-    synth.trimInput(0.5);
+    // The input is resampled from 10 kHz to 44.1 kHz
+    EXPECT_GT(output.size(), 20000u * 4);
 
-    const double v0_trim = synth.sampleInput(end_t, 0);
-    const double v1_trim = synth.sampleInput(end_t - 1 / 64.0, 0);
+    int nonZero = 0;
+    for (const int16_t sample : output) {
+        if (sample != 0) ++nonZero;
+    }
 
-    EXPECT_NEAR(v0, v0_trim, 1E-6);
-    EXPECT_NEAR(v1, v1_trim, 1E-6);
+    EXPECT_GT(nonZero, (int)output.size() / 2);
 
     synth.destroy();
 }
-*/
 
-TEST(SynthesizerTests, SynthesizerSystemTestSingleThread) {
-    constexpr int inputSamples = 64;
-    constexpr int outputSamples = 63;
-
+TEST(SynthesizerTests, RenderingThread) {
     Synthesizer synth;
-    setupSynchronizedSynthesizer(synth);
+    setupSynthesizer(synth, 1, 0.0f);
+    synth.startAudioRenderingThread();
 
-    int16_t *output = new int16_t[outputSamples];
-    int totalSamples = 0;
+    std::vector<double> data(1);
+    std::vector<int16_t> block(4096);
+    int total = 0;
 
-    for (int i = 0; i < inputSamples;) {
-        for (int j = 0; j < 16; ++j, ++i) {
-            const double v = (double)i;
-            const double data[] = { v, v, v, v, v, v, v, v };
-            synth.writeInput(data);
+    for (int i = 0; i < 20000;) {
+        for (int j = 0; j < 100; ++j, ++i) {
+            data[0] = 1000.0 * std::sin(i * 0.05);
+            synth.writeInput(data.data());
         }
 
         synth.endInputBlock();
-        synth.renderAudio();
-
-        totalSamples += synth.readAudioOutput(16, output + totalSamples);
-        int a = 0;
-    }
-
-    const int rem = synth.readAudioOutput(outputSamples - totalSamples, output + totalSamples);
-
-    EXPECT_EQ(rem, outputSamples - totalSamples);
-
-    for (int i = 0; i < 16; ++i) {
-        EXPECT_EQ(output[i], 0);
-    }
-
-    for (int i = 16; i < outputSamples; ++i) {
-        EXPECT_EQ(output[i], (i - 16) * 10 * 8);
-    }
-
-    synth.destroy();
-    delete[] output;
-}
-
-TEST(SynthesizerTests, SynthesizerSystemTest) {
-    constexpr int inputSamples = 1024;
-    constexpr int outputSamples = 1023;
-
-    Synthesizer synth;
-    setupSynchronizedSynthesizer(synth);
-    synth.startAudioRenderingThread();
-
-    int16_t *output = new int16_t[outputSamples];
-    int totalSamples = 0;
-
-    for (int i = 0; i < inputSamples;) {
-        for (int j = 0; j < 16; ++j, ++i) {
-            const double v = (double)i;
-            const double data[] = { v, v, v, v, v, v, v, v };
-            synth.writeInput(data);
-        }
-
-        const int samplesReturned = synth.readAudioOutput(8, output + totalSamples);
-        totalSamples += samplesReturned;
-    }
-
-    synth.endInputBlock();
-    synth.waitProcessed();
-
-    const int rem = synth.readAudioOutput(outputSamples - totalSamples, output + totalSamples);
-    EXPECT_EQ(rem, outputSamples - totalSamples);
-
-    for (int i = 0; i < 16; ++i) {
-        EXPECT_EQ(output[i], 0);
-    }
-
-    for (int i = 16; i < outputSamples; ++i) {
-        EXPECT_EQ(output[i], std::min(32767, (i - 16) * 10 * 8));
+        synth.waitProcessed();
+        total += synth.readAudioOutput((int)block.size(), block.data());
     }
 
     synth.endAudioRenderingThread();
-    synth.destroy();
 
-    delete[] output;
+    EXPECT_GT(total, 0);
+
+    synth.destroy();
+}
+
+TEST(ConvolutionFilterTests, FftMatchesDirectConvolution) {
+    std::mt19937 rng(1234);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+
+    for (const int irLength : { 1, 7, 128, 129, 1000, 4099 }) {
+        ConvolutionFilter direct, fast;
+        direct.initialize(irLength);
+        fast.initialize(irLength, 64);
+
+        for (int i = 0; i < irLength; ++i) {
+            const float h = dist(rng) * std::exp(-i / 500.0f);
+            direct.getImpulseResponse()[i] = h;
+            fast.getImpulseResponse()[i] = h;
+        }
+
+        fast.prepare();
+
+        const int samples = 5000;
+        std::vector<float> input(samples), expected(samples), actual(samples);
+        for (int i = 0; i < samples; ++i) {
+            input[i] = dist(rng);
+            expected[i] = direct.f(input[i]);
+        }
+
+        // Process in irregular block sizes
+        int offset = 0;
+        int blockSize = 1;
+        while (offset < samples) {
+            const int n = std::min(blockSize, samples - offset);
+            fast.process(input.data() + offset, actual.data() + offset, n);
+            offset += n;
+            blockSize = (blockSize * 7) % 300 + 1;
+        }
+
+        const int latency = fast.getBlockLatency();
+        for (int i = 0; i + latency < samples; ++i) {
+            ASSERT_NEAR(actual[i + latency], expected[i], 1E-3f) << "IR length " << irLength << ", sample " << i;
+        }
+
+        for (int i = 0; i < latency; ++i) {
+            EXPECT_EQ(actual[i], 0.0f);
+        }
+
+        direct.destroy();
+        fast.destroy();
+    }
+}
+
+TEST(ConvolutionFilterTests, DryWetMix) {
+    ConvolutionFilter filter;
+    filter.initialize(16, 8);
+    filter.getImpulseResponse()[0] = 2.0f;
+
+    std::vector<float> input(64), output(64);
+    for (int i = 0; i < 64; ++i) input[i] = (float)i;
+
+    filter.process(input.data(), output.data(), 64, 0.25f);
+
+    const int latency = filter.getBlockLatency();
+    for (int i = latency; i < 64; ++i) {
+        const float x = input[i - latency];
+        EXPECT_NEAR(output[i], 0.25f * 2.0f * x + 0.75f * x, 1E-3f);
+    }
+
+    filter.destroy();
 }

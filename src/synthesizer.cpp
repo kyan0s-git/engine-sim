@@ -26,6 +26,10 @@ Synthesizer::Synthesizer() {
     m_run = true;
     m_thread = nullptr;
     m_filters = nullptr;
+
+    m_latency = 0;
+    m_processed = true;
+    m_noiseState = 0x9E3779B9u;
 }
 
 Synthesizer::~Synthesizer() {
@@ -96,12 +100,14 @@ void Synthesizer::initializeImpulseResponse(
         }
     }
 
-    const unsigned int sampleCount = std::min(10000U, clippedLength);
+    const unsigned int sampleCount = std::max(1U, std::min(10000U, clippedLength));
     m_filters[index].convolution.initialize(sampleCount);
-    for (unsigned int i = 0; i < sampleCount; ++i) {
+    for (unsigned int i = 0; i < sampleCount && i < samples; ++i) {
         m_filters[index].convolution.getImpulseResponse()[i] =
             volume * impulseResponse[i] / INT16_MAX;
     }
+
+    m_filters[index].convolution.prepare();
 }
 
 void Synthesizer::startAudioRenderingThread() {
@@ -240,19 +246,92 @@ void Synthesizer::renderAudio() {
     m_inputSamplesRead = n;
     m_processed = true;
 
+    // Take a snapshot of the parameters so that the UI thread can modify them
+    // while this block is being rendered
+    const AudioParameters parameters = m_audioParameters;
+
     lk0.unlock();
 
-    for (int i = 0; i < m_inputChannelCount; ++i) {
-        m_filters[i].airNoiseLowPass.setCutoffFrequency(
-            static_cast<float>(m_audioParameters.airNoiseFrequencyCutoff), m_audioSampleRate);
-        m_filters[i].jitterFilter.setJitterScale(m_audioParameters.inputSampleNoise);
-    }
+    renderBlock(n, parameters);
 
-    for (int i = 0; i < n; ++i) {
-        m_audioBuffer.write(renderAudio(i));
+    // Publish the rendered samples
+    {
+        std::lock_guard<std::mutex> lock(m_lock0);
+        for (int i = 0; i < n; ++i) {
+            m_audioBuffer.write(m_renderedAudio[i]);
+        }
     }
 
     m_cv0.notify_one();
+}
+
+void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
+    if (n <= 0) return;
+
+    if ((int)m_mixBuffer.size() < n) {
+        m_channelInput.resize(n);
+        m_channelOutput.resize(n);
+        m_mixBuffer.resize(n);
+        m_renderedAudio.resize(n);
+    }
+
+    const float airNoise = parameters.airNoise;
+    const float dF_F_mix = parameters.dF_F_mix;
+
+    std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + n, 0.0f);
+
+    for (int i = 0; i < m_inputChannelCount; ++i) {
+        ProcessingFilters &filters = m_filters[i];
+        filters.airNoiseLowPass.setCutoffFrequency(
+            static_cast<float>(parameters.airNoiseFrequencyCutoff), m_audioSampleRate);
+        filters.jitterFilter.setJitterScale(parameters.inputSampleNoise);
+
+        const float *transfer = m_inputChannels[i].transferBuffer;
+        for (int j = 0; j < n; ++j) {
+            const float f_in = filters.jitterFilter.fast_f(transfer[j]);
+            const float f_dc = filters.inputDcFilter.fast_f(f_in);
+            const float f = f_in - f_dc;
+            const float f_p = filters.derivative.f(f_in);
+
+            // Each channel has its own noise filter; previously every channel
+            // shared the first channel's filter which skewed its cutoff
+            // frequency for engines with multiple exhaust systems
+            const float r = filters.airNoiseLowPass.fast_f(noise());
+            const float r_mixed = airNoise * r + (1 - airNoise);
+
+            float v_in =
+                f_p * dF_F_mix
+                + f * r_mixed * (1 - dF_F_mix);
+            if (std::fpclassify(v_in) == FP_SUBNORMAL) {
+                v_in = 0;
+            }
+
+            m_channelInput[j] = v_in;
+        }
+
+        filters.convolution.process(
+            m_channelInput.data(), m_channelOutput.data(), n, parameters.convolution);
+
+        for (int j = 0; j < n; ++j) {
+            m_mixBuffer[j] += m_channelOutput[j];
+        }
+    }
+
+    m_levelingFilter.p_target = parameters.levelerTarget;
+    for (int j = 0; j < n; ++j) {
+        const float signal = m_antialiasing.fast_f(m_mixBuffer[j]);
+        const float v_leveled = m_levelingFilter.f(signal) * parameters.volume;
+
+        long r_int = std::lround(v_leveled);
+        if (r_int > INT16_MAX) {
+            r_int = INT16_MAX;
+        }
+        else if (r_int < INT16_MIN) {
+            r_int = INT16_MIN;
+        }
+
+        m_renderedAudio[j] = static_cast<int16_t>(r_int);
+    }
 }
 
 double Synthesizer::getLatency() const {
@@ -276,58 +355,6 @@ void Synthesizer::setInputSampleRate(double sampleRate) {
         std::lock_guard<std::mutex> lock(m_lock0);
         m_inputSampleRate = sampleRate;
     }
-}
-
-int16_t Synthesizer::renderAudio(int inputSample) {
-    const float airNoise = m_audioParameters.airNoise;
-    const float dF_F_mix = m_audioParameters.dF_F_mix;
-    const float convAmount = m_audioParameters.convolution;
-
-    float signal = 0;
-    for (int i = 0; i < m_inputChannelCount; ++i) {
-        const float r_0 = 2.0 * ((double)rand() / RAND_MAX) - 1.0;
-
-        const float jitteredSample =
-            m_filters[i].jitterFilter.fast_f(m_inputChannels[i].transferBuffer[inputSample]);
-
-        const float f_in = jitteredSample;
-        const float f_dc = m_filters[i].inputDcFilter.fast_f(f_in);
-        const float f = f_in - f_dc;
-        const float f_p = m_filters[i].derivative.f(f_in);
-
-        const float noise = 2.0 * ((double)rand() / RAND_MAX) - 1.0;
-        const float r =
-            m_filters->airNoiseLowPass.fast_f(noise);
-        const float r_mixed =
-            airNoise * r + (1 - airNoise);
-
-        float v_in =
-            f_p * dF_F_mix
-            + f * r_mixed * (1 - dF_F_mix);
-        if (std::fpclassify(v_in) == FP_SUBNORMAL) {
-            v_in = 0;
-        }
-
-        const float v =
-            convAmount * m_filters[i].convolution.f(v_in)
-            + (1 - convAmount) * v_in;
-
-        signal += v;
-    }
-
-    signal = m_antialiasing.fast_f(signal);
-
-    m_levelingFilter.p_target = m_audioParameters.levelerTarget;
-    const float v_leveled = m_levelingFilter.f(signal) * m_audioParameters.volume;
-    int r_int = std::lround(v_leveled);
-    if (r_int > INT16_MAX) {
-        r_int = INT16_MAX;
-    }
-    else if (r_int < INT16_MIN) {
-        r_int = INT16_MIN;
-    }
-
-    return static_cast<int16_t>(r_int);
 }
 
 double Synthesizer::getLevelerGain() {

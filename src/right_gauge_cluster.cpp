@@ -205,7 +205,7 @@ void RightGaugeCluster::renderTachSpeedCluster(const Bounds &bounds) {
         (float)std::ceil(units::toRpm(getRedline()) / 500.0) * 500.0f;
     const float redlineWarning =
         (float)std::floor(units::toRpm(getRedline() * 0.9) / 500.0) * 500.0f;
-    m_tachometer->m_gauge->m_max = (int)maxRpm;
+    m_tachometer->m_gauge->m_max = (float)maxRpm;
     m_tachometer->m_gauge->setBandCount(3);
     m_tachometer->m_gauge->setBand(
         { m_app->getForegroundColor(), 400, 1000, 3.0f, 6.0f }, 0);

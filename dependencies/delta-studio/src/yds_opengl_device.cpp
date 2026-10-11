@@ -11,7 +11,6 @@
 
 #include "OpenGL.h"
 #include <SDL.h>
-#include <SDL_image.h>
 
 #include "../include/yds_file.h"
 
@@ -972,11 +971,11 @@ ysError ysOpenGLDevice::CreateTexture(ysTexture **texture, const char *fname) {
 
     bool useAlpha = true;
 
-    // Use SDL to load the image
-    SDL_Surface *pTexSurface = IMG_Load(fname); 
+    // Textures are loaded with SDL's built-in BMP loader. Engine Simulator
+    // doesn't use image textures so the SDL_image dependency isn't needed.
+    SDL_Surface *pTexSurface = SDL_LoadBMP(fname);
 
     if (pTexSurface == nullptr) {
-        const char *err = IMG_GetError();
         return YDS_ERROR_RETURN_MSG(ysError::CouldNotOpenFile, fname);
     }
 

@@ -27,6 +27,7 @@
 #include <SDL.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -302,6 +303,9 @@ bool EngineSimApplication::resolveDataPaths() {
 
     m_assetPath = (fs::path(m_dataRoot) / "assets").string();
 
+    std::printf("Engine Simulator %s\n  data: %s\n  rendering engine: %s\n",
+        s_buildVersion.c_str(), m_dataRoot.c_str(), m_deltaPath.c_str());
+
     // Per-user writable location for logs and session information
     char *prefPath = SDL_GetPrefPath("EngineSimulator", "engine-sim");
     if (prefPath != nullptr) {
@@ -311,6 +315,9 @@ bool EngineSimApplication::resolveDataPaths() {
     else {
         m_userDataPath = m_dataRoot;
     }
+
+    std::printf("  user data: %s\n", m_userDataPath.c_str());
+    std::fflush(stdout);
 
     return true;
 }

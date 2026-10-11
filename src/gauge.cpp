@@ -1,8 +1,10 @@
-#include <climits>
 #include "../include/gauge.h"
 
 #include "../include/engine_sim_application.h"
 #include "../include/constants.h"
+
+#include <algorithm>
+#include <climits>
 
 Gauge::Gauge() {
     m_thetaMin = (float)constants::pi;
@@ -49,8 +51,11 @@ void Gauge::destroy() {
 }
 
 void Gauge::update(float dt) {
-    const float value = std::fmaxf((float)m_min, std::fmin((float)m_max, (float)m_value));
-    const float needle_s = std::pow((value - m_min) / std::abs(m_max - m_min), m_gamma);
+    const float range = std::abs(m_max - m_min);
+    const float value = std::fmax(m_min, std::fmin(m_max, m_value));
+    const float needle_s = (range > 0)
+        ? std::pow((value - m_min) / range, m_gamma)
+        : 0.0f;
     const float F =
         m_needleKs * (needle_s - m_needlePosition)
         - m_needleKd * m_needleVelocity;
@@ -76,15 +81,18 @@ void Gauge::render() {
 
     GeometryGenerator::Line2dParameters lineParams;
     generator->startShape();
-    for (int i = 0; i <= std::abs(m_max - m_min); i += m_minorStep) {
-        const float s = std::pow((float)i / std::abs(m_max - m_min), m_gamma);
+    const float range = std::abs(m_max - m_min);
+    const int minorStep = std::max(1, m_minorStep);
+    const int majorStep = std::max(1, m_majorStep);
+    for (int i = 0; range > 0 && i <= range; i += minorStep) {
+        const float s = std::pow((float)i / range, m_gamma);
         const float theta = s * m_thetaMax + (1 - s) * m_thetaMin;
 
-        const float tickLength = (i % m_majorStep) == 0
+        const float tickLength = (i % majorStep) == 0
             ? majorTickLength
             : minorTickLength;
 
-        const float tickWidth = (i % m_majorStep) == 0
+        const float tickWidth = (i % majorStep) == 0
             ? majorTickWidth
             : minorTickWidth;
 
@@ -99,11 +107,11 @@ void Gauge::render() {
         lineParams.y0 = inner.y;
         lineParams.y1 = outer.y;
 
-        if ((i % m_majorStep) == 0 || (i + m_minorStep) <= m_maxMinorTick) {
+        if ((i % majorStep) == 0 || (i + minorStep) <= m_maxMinorTick) {
             generator->generateLine2d(lineParams);
         }
 
-        if ((i % m_majorStep) == 0 && m_renderText) {
+        if ((i % majorStep) == 0 && m_renderText) {
             drawCenteredText(
                     "n",
                     Bounds(0.0f, 0.0f, unitsToPixels(text - origin) + m_bounds.getPosition(Bounds::center) + m_center, Bounds::center),
@@ -140,10 +148,12 @@ void Gauge::render() {
         ringParams.outerRadius = outerRadius + pixelsToUnits(band.radial_offset);
         ringParams.innerRadius = outerRadius + pixelsToUnits(band.radial_offset - band.width);
 
-        const float s0 = std::pow((float)(band.start - m_min) / std::abs(m_max - m_min), m_gamma);
+        if (range <= 0) break;
+
+        const float s0 = std::pow((float)(band.start - m_min) / range, m_gamma);
         const float angle0 = s0 * m_thetaMax + (1 - s0) * m_thetaMin;
 
-        const float s1 = std::pow((float)(band.end - m_min) / std::abs(m_max - m_min), m_gamma);
+        const float s1 = std::pow((float)(band.end - m_min) / range, m_gamma);
         const float angle1 = s1 * m_thetaMax + (1 - s1) * m_thetaMin;
 
         ringParams.startAngle = std::fminf(angle0, angle1) + band.shorten_end;

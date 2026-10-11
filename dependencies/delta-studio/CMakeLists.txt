@@ -13,22 +13,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # =========================================================
 # SDL2
+#
+# The parent project may already provide an SDL2::SDL2 target (for example
+# when building SDL from source for self-contained release binaries).
 
-find_package(SDL2 CONFIG QUIET)
-find_package(SDL2_image CONFIG QUIET)
+if (NOT TARGET SDL2::SDL2)
+    find_package(SDL2 CONFIG QUIET)
+endif()
 
-if (NOT TARGET SDL2::SDL2 OR NOT (TARGET SDL2_image::SDL2_image OR TARGET SDL2_image::SDL2_image-static))
+if (TARGET SDL2::SDL2)
+    set(DELTA_SDL2_LIBRARIES SDL2::SDL2)
+elseif (TARGET SDL2::SDL2-static)
+    set(DELTA_SDL2_LIBRARIES SDL2::SDL2-static)
+else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SDL2_PKG REQUIRED IMPORTED_TARGET sdl2)
-    pkg_check_modules(SDL2_IMAGE_PKG REQUIRED IMPORTED_TARGET SDL2_image)
-    set(DELTA_SDL2_LIBRARIES PkgConfig::SDL2_PKG PkgConfig::SDL2_IMAGE_PKG)
-else()
-    set(DELTA_SDL2_LIBRARIES SDL2::SDL2)
-    if (TARGET SDL2_image::SDL2_image)
-        list(APPEND DELTA_SDL2_LIBRARIES SDL2_image::SDL2_image)
-    else()
-        list(APPEND DELTA_SDL2_LIBRARIES SDL2_image::SDL2_image-static)
-    endif()
+    set(DELTA_SDL2_LIBRARIES PkgConfig::SDL2_PKG)
 endif()
 
 # =========================================================
