@@ -16,6 +16,9 @@
 #include "throttle.h"
 
 #include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 class Simulator;
 class Vehicle;
@@ -123,8 +126,32 @@ class Engine : public Part {
 
         virtual Simulator *createSimulator(Vehicle *vehicle, Transmission *transmission);
 
+        // Takes ownership of an object that the engine's parts refer to but
+        // that was created separately (e.g. functions, camshafts and impulse
+        // responses created by a script). Owned objects are released by
+        // destroy().
+        template <typename T>
+        T *addOwnedObject(T *object) {
+            m_ownedObjects.push_back({ object, [](void *p) {
+                T *typed = static_cast<T *>(p);
+                if constexpr (HasDestroy<T>::value) typed->destroy();
+                delete typed;
+            } });
+
+            return object;
+        }
+
     protected:
         virtual CombustionChamber *createCombustionChamber(int index);
+
+        template <typename T, typename = void>
+        struct HasDestroy : std::false_type {};
+
+        template <typename T>
+        struct HasDestroy<T, std::void_t<decltype(std::declval<T &>().destroy())>>
+            : std::true_type {};
+
+        std::vector<std::pair<void *, void (*)(void *)>> m_ownedObjects;
 
     protected:
         std::string m_name;

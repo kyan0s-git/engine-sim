@@ -8,7 +8,13 @@ JitterFilter::JitterFilter() {
 }
 
 JitterFilter::~JitterFilter() {
-    /* void */
+    destroy();
+}
+
+void JitterFilter::destroy() {
+    delete[] m_history;
+    m_history = nullptr;
+    m_maxJitter = 0;
 }
 
 void JitterFilter::initialize(
@@ -16,8 +22,9 @@ void JitterFilter::initialize(
     float cutoffFrequency,
     float audioFrequency)
 {
-    m_maxJitter = maxJitter;
+    destroy();
 
+    m_maxJitter = maxJitter;
     m_history = new float[maxJitter];
     m_offset = 0;
     memset(m_history, 0, sizeof(float) * maxJitter);

@@ -37,6 +37,10 @@ namespace es_script {
                     path.toString(),
                     m_volume);
 
+                if (context->getEngine() != nullptr) {
+                    context->getEngine()->addOwnedObject(impulseResponse);
+                }
+
                 return impulseResponse;
             }
         }

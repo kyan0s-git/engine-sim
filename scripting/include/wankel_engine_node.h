@@ -187,7 +187,7 @@ namespace es_script {
             Fuel *fuel = engine->getFuel();
             m_fuel->generate(fuel, &context);
 
-            Function *meanPistonSpeedToTurbulence = new Function;
+            Function *meanPistonSpeedToTurbulence = engine->addOwnedObject(new Function);
             meanPistonSpeedToTurbulence->initialize(30, 1);
             for (int i = 0; i < 30; ++i) {
                 const double s = static_cast<double>(i);

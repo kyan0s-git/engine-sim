@@ -6,6 +6,7 @@
 #include "../include/piston_engine_simulator.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <assert.h>
 
@@ -117,6 +118,11 @@ void Engine::destroy() {
         delete m_combustionChambers[i];
     }
 
+    for (int i = 0; i < m_cylinderBankCount; ++i) {
+        m_heads[i].destroy();
+        m_cylinderBanks[i].destroy();
+    }
+
     for (int i = 0; i < m_exhaustSystemCount; ++i) {
         m_exhaustSystems[i].destroy();
     }
@@ -146,6 +152,12 @@ void Engine::destroy() {
     m_intakes = nullptr;
     m_combustionChambers = nullptr;
     m_throttle = nullptr;
+
+    for (auto it = m_ownedObjects.rbegin(); it != m_ownedObjects.rend(); ++it) {
+        it->second(it->first);
+    }
+
+    m_ownedObjects.clear();
 }
 
 Crankshaft *Engine::getOutputCrankshaft() const {
@@ -253,13 +265,8 @@ void Engine::calculateDisplacement() {
     // numerical approximation.
     constexpr int Resolution = 1000;
 
-    double *min_s = new double[m_cylinderCount];
-    double *max_s = new double[m_cylinderCount];
-
-    for (int i = 0; i < m_cylinderCount; ++i) {
-        min_s[i] = DBL_MAX;
-        max_s[i] = -DBL_MAX;
-    }
+    std::vector<double> min_s(m_cylinderCount, DBL_MAX);
+    std::vector<double> max_s(m_cylinderCount, -DBL_MAX);
 
     for (int j = 0; j < Resolution; ++j) {
         const double crankshaftAngle = 2 * (j / static_cast<double>(Resolution)) * constants::pi;
