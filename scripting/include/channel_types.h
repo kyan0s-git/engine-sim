@@ -27,15 +27,14 @@ namespace es_script {
         static const piranha::ChannelType ThrottleChannel;
     };
 
+    // Only the specializations below are defined; using an unregistered type
+    // results in a link error
     template <typename Type>
-    extern inline const piranha::ChannelType *LookupChannelType() {
-        static_assert(false, "Invalid type lookup");
-        return nullptr;
-    }
+    const piranha::ChannelType *LookupChannelType();
 
 #define ASSIGN_CHANNEL_TYPE(type, channel) \
     class type; \
-    template <> extern inline const piranha::ChannelType *LookupChannelType<type>() { \
+    template <> inline const piranha::ChannelType *LookupChannelType<type>() { \
         return &ObjectChannel::channel; \
     }
 

@@ -18,10 +18,15 @@ es_script::Compiler::Output *es_script::Compiler::output() {
     return s_output;
 }
 
-void es_script::Compiler::initialize() {
+void es_script::Compiler::initialize(const std::vector<std::string> &searchPaths) {
     m_compiler = new piranha::Compiler(&m_rules);
     m_compiler->setFileExtension(".mr");
 
+    for (const std::string &searchPath : searchPaths) {
+        m_compiler->addSearchPath(searchPath);
+    }
+
+    // Legacy search paths relative to the working directory
     m_compiler->addSearchPath("../../es/");
     m_compiler->addSearchPath("../es/");
     m_compiler->addSearchPath("es/");
@@ -29,10 +34,13 @@ void es_script::Compiler::initialize() {
     m_rules.initialize();
 }
 
-bool es_script::Compiler::compile(const piranha::IrPath &path) {
+bool es_script::Compiler::compile(const piranha::IrPath &path, std::ostream &file) {
     bool successful = false;
 
-    std::ofstream file("error_log.log", std::ios::out);
+    // Clear out any objects produced by a previous script so that they can't
+    // leak into this one (they're owned and freed by the application)
+    *output() = Output();
+
     piranha::IrCompilationUnit *unit = m_compiler->compile(path);
     if (unit == nullptr) {
         file << "Can't find file: " << path.toString() << "\n";
@@ -52,8 +60,6 @@ bool es_script::Compiler::compile(const piranha::IrPath &path) {
             }
         }
     }
-
-    file.close();
 
     return successful;
 }
@@ -78,7 +84,7 @@ void es_script::Compiler::destroy() {
 
 void es_script::Compiler::printError(
     const piranha::CompilationError *err,
-    std::ofstream &file) const
+    std::ostream &file) const
 {
     const piranha::ErrorCode_struct &errorCode = err->getErrorCode();
     file << err->getCompilationUnit()->getPath().getStem()

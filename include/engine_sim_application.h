@@ -26,6 +26,7 @@
 #include "delta.h"
 #include "dtv.h"
 
+#include <string>
 #include <vector>
 
 class EngineSimApplication {
@@ -33,14 +34,47 @@ class EngineSimApplication {
         static std::string s_buildVersion;
 
     public:
+        // Options that can be provided on the command line
+        struct StartupOptions {
+            enum class Toggle {
+                Default,
+                On,
+                Off
+            };
+
+            std::string engineScript;
+            std::string themeScript;
+            std::string dataRoot;
+            Toggle fullscreen = Toggle::Default;
+        };
+
+    public:
         EngineSimApplication();
         virtual ~EngineSimApplication();
 
         static std::string getBuildVersion() { return s_buildVersion; }
 
-        void initialize(void *instance, ysContextObject::DeviceAPI api);
+        void setStartupOptions(const StartupOptions &options) { m_startupOptions = options; }
+        const std::string &getStartupError() const { return m_startupError; }
+
+        // Returns false if the application could not be started; see
+        // getStartupError() for details
+        bool initialize(void *instance, ysContextObject::DeviceAPI api);
         void run();
         void destroy();
+
+        // Script management
+        void loadEngineScript(const std::string &path);
+        void loadThemeScript(const std::string &path);
+        void reloadScripts();
+
+        const std::string &getEngineScriptPath() const { return m_engineScriptPath; }
+        const std::string &getThemeScriptPath() const { return m_themeScriptPath; }
+        const std::string &getScriptLog() const { return m_scriptLog; }
+        bool hasScriptErrors() const { return m_scriptErrors; }
+
+        const std::string &getDataRoot() const { return m_dataRoot; }
+        const std::string &getUserDataPath() const { return m_userDataPath; }
 
         void loadEngine(Engine *engine, Vehicle *vehicle, Transmission *transmission);
         void drawGenerated(
@@ -90,6 +124,17 @@ class EngineSimApplication {
 
     protected:
         void loadScript();
+        bool resolveDataPaths();
+        std::vector<std::string> getScriptSearchPaths() const;
+        bool compileScript(
+            const std::string &path,
+            Engine **engine,
+            Vehicle **vehicle,
+            Transmission **transmission,
+            ApplicationSettings *settings,
+            bool *settingsSet);
+        void loadSession();
+        void saveSession() const;
         void processEngineInput();
         void renderScene();
 
@@ -122,6 +167,22 @@ class EngineSimApplication {
         dbasic::AssetManager m_assetManager;
 
         std::string m_assetPath;
+
+        // Data locations
+        std::string m_dataRoot;
+        std::string m_deltaPath;
+        std::string m_userDataPath;
+
+        // Scripts
+        StartupOptions m_startupOptions;
+        std::string m_startupError;
+        std::string m_engineScriptPath;
+        std::string m_themeScriptPath;
+        std::string m_scriptLog;
+        bool m_scriptErrors = false;
+
+        // Scratch buffer reused every frame for audio output
+        std::vector<int16_t> m_audioScratch;
 
         ysRenderTarget *m_mainRenderTarget;
         ysGPUBuffer *m_geometryVertexBuffer;

@@ -43,6 +43,8 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
     m_vehicle = vehicle;
     m_transmission = transmission;
 
+    if (m_engine == nullptr || m_vehicle == nullptr || m_transmission == nullptr) return;
+
     const int crankCount = m_engine->getCrankshaftCount();
     const int cylinderCount = m_engine->getCylinderCount();
     const int linkCount = cylinderCount * 2;

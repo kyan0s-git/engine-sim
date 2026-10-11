@@ -34,6 +34,14 @@ namespace es_script {
 
             Engine *engine = new Engine;
             engineNode->buildEngine(engine);
+
+            // Only one engine can be simulated at a time
+            Engine *previous = Compiler::output()->engine;
+            if (previous != nullptr) {
+                previous->destroy();
+                delete previous;
+            }
+
             Compiler::output()->engine = engine;
         }
 
@@ -511,6 +519,8 @@ namespace es_script {
 
             Transmission *transmission = new Transmission;
             m_transmission->generate(transmission);
+
+            delete Compiler::output()->transmission;
             Compiler::output()->transmission = transmission;
         }
 
@@ -535,6 +545,8 @@ namespace es_script {
 
             Vehicle *vehicle = new Vehicle;
             vehicleNode->generate(vehicle);
+
+            delete Compiler::output()->vehicle;
             Compiler::output()->vehicle = vehicle;
         }
 
@@ -575,6 +587,7 @@ namespace es_script {
             readAllInputs();
 
             Compiler::output()->applicationSettings = m_settings;
+            Compiler::output()->applicationSettingsSet = true;
         }
 
     protected:

@@ -1,48 +1,49 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.16)
 
-option(DTV "Enable video output" OFF)
+project(engine-sim
+    VERSION 0.2.0
+    DESCRIPTION "Real-time internal combustion engine simulator"
+    LANGUAGES C CXX)
+
+# ========================================================
+# Options
+
+option(ENGINE_SIM_BUILD_APP "Build the graphical application" ON)
+option(ENGINE_SIM_BUILD_TESTS "Build the unit tests (downloads GoogleTest)" ON)
 option(PIRANHA_ENABLED "Enable scripting input" ON)
-option(DISCORD_ENABLED "Enable Discord Rich Presence" ON)
+option(DTV "Enable video output (requires FFmpeg)" OFF)
 
-if (DTV)
-    add_compile_definitions(ATG_ENGINE_SIM_VIDEO_CAPTURE)
-endif (DTV)
+# Discord Rich Presence is only available with the bundled prebuilt MSVC library
+if (MSVC)
+    option(DISCORD_ENABLED "Enable Discord Rich Presence" ON)
+else()
+    set(DISCORD_ENABLED OFF CACHE BOOL "Enable Discord Rich Presence (Windows/MSVC only)" FORCE)
+endif()
 
-if (PIRANHA_ENABLED)
-    add_compile_definitions(ATG_ENGINE_SIM_PIRANHA_ENABLED)
-endif (PIRANHA_ENABLED)
+# Default to an optimized build; the simulation is far too slow in Debug
+if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
 
-if (DISCORD_ENABLED)
-    add_compile_definitions(ATG_ENGINE_SIM_DISCORD_ENABLED)
-endif (DISCORD_ENABLED)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Enable group projects in folders
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "cmake")
 
-project(engine-sim)
-
-set(CMAKE_CXX_STANDARD 17)
-
-# ========================================================
-# GTEST
-
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    URL
-    https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
-)
-
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
-
-set_property(TARGET gmock PROPERTY FOLDER "gtest")
-set_property(TARGET gmock_main PROPERTY FOLDER "gtest")
-set_property(TARGET gtest PROPERTY FOLDER "gtest")
-set_property(TARGET gtest_main PROPERTY FOLDER "gtest")
+if (MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX _USE_MATH_DEFINES)
+    add_compile_options(/MP /utf-8)
+endif()
 
 # ========================================================
+# Dependencies
+
+add_subdirectory(dependencies)
+
+# ========================================================
+# Simulation core (no UI or platform dependencies)
 
 add_library(engine-sim STATIC
     # Source files
@@ -134,13 +135,21 @@ add_library(engine-sim STATIC
     include/vtec_valvetrain.h
 )
 
-target_link_libraries(engine-sim
+target_link_libraries(engine-sim PUBLIC
     simple-2d-constraint-solver
-    csv-io
-    delta-basic)
+    csv-io)
 
-target_include_directories(engine-sim
-    PUBLIC dependencies/submodules)
+target_include_directories(engine-sim PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/dependencies)
+
+if (NOT MSVC)
+    find_package(Threads REQUIRED)
+    target_link_libraries(engine-sim PUBLIC Threads::Threads)
+endif()
+
+# ========================================================
+# Scripting
 
 if (PIRANHA_ENABLED)
     add_library(engine-sim-script-interpreter STATIC
@@ -163,7 +172,6 @@ if (PIRANHA_ENABLED)
         scripting/include/engine_node.h
         scripting/include/engine_sim.h
         scripting/include/exhaust_system_node.h
-        scripting/include/intake_node.h
         scripting/include/function_node.h
         scripting/include/ignition_module_node.h
         scripting/include/ignition_wire_node.h
@@ -179,143 +187,181 @@ if (PIRANHA_ENABLED)
         scripting/include/standard_valvetrain_node.h
         scripting/include/transmission_node.h
         scripting/include/valvetrain_node.h
+        scripting/include/vehicle_node.h
         scripting/include/vtec_valvetrain_node.h
-		scripting/include/vehicle_node.h
     )
 
-    target_include_directories(engine-sim-script-interpreter
-        PUBLIC dependencies/submodules)
+    target_compile_definitions(engine-sim-script-interpreter PUBLIC ATG_ENGINE_SIM_PIRANHA_ENABLED)
 
-    target_link_libraries(engine-sim-script-interpreter
-        csv-io
+    target_link_libraries(engine-sim-script-interpreter PUBLIC
+        engine-sim
         piranha)
-endif (PIRANHA_ENABLED)
+endif()
 
-if (DISCORD_ENABLED)
-    add_library(discord STATIC
+# ========================================================
+# Application
+
+if (ENGINE_SIM_BUILD_APP)
+    add_executable(engine-sim-app WIN32
         # Source files
-        dependencies/discord/Discord.cpp
+        src/main.cpp
+        src/engine_sim_application.cpp
+        src/geometry_generator.cpp
+        src/simulation_object.cpp
+        src/piston_object.cpp
+        src/connecting_rod_object.cpp
+        src/ui_element.cpp
+        src/ui_manager.cpp
+        src/cylinder_pressure_gauge.cpp
+        src/ui_math.cpp
+        src/gauge.cpp
+        src/crankshaft_object.cpp
+        src/cylinder_bank_object.cpp
+        src/cylinder_head_object.cpp
+        src/ui_button.cpp
+        src/ui_utilities.cpp
+        src/combustion_chamber_object.cpp
+        src/oscilloscope.cpp
+        src/shaders.cpp
+        src/engine_view.cpp
+        src/right_gauge_cluster.cpp
+        src/cylinder_temperature_gauge.cpp
+        src/labeled_gauge.cpp
+        src/throttle_display.cpp
+        src/afr_cluster.cpp
+        src/fuel_cluster.cpp
+        src/oscilloscope_cluster.cpp
+        src/performance_cluster.cpp
+        src/firing_order_display.cpp
+        src/load_simulation_cluster.cpp
+        src/mixer_cluster.cpp
+        src/info_cluster.cpp
 
         # Include files
-        dependencies/discord/Discord.h
-        dependencies/discord/discord_register.h
-        dependencies/discord/discord_rpc.h
+        include/delta.h
+        include/dtv.h
+        include/engine_sim_application.h
+        include/geometry_generator.h
+        include/simulation_object.h
+        include/piston_object.h
+        include/connecting_rod_object.h
+        include/ui_element.h
+        include/ui_manager.h
+        include/cylinder_pressure_gauge.h
+        include/ui_math.h
+        include/crankshaft_object.h
+        include/cylinder_bank_object.h
+        include/cylinder_head_object.h
+        include/ui_button.h
+        include/ui_utilities.h
+        include/combustion_chamber_object.h
+        include/oscilloscope.h
+        include/shaders.h
+        include/engine_view.h
+        include/right_gauge_cluster.h
+        include/cylinder_temperature_gauge.h
+        include/labeled_gauge.h
+        include/throttle_display.h
+        include/afr_cluster.h
+        include/fuel_cluster.h
+        include/oscilloscope_cluster.h
+        include/performance_cluster.h
+        include/firing_order_display.h
+        include/load_simulation_cluster.h
+        include/mixer_cluster.h
+        include/info_cluster.h
     )
-endif (DISCORD_ENABLED)
 
-add_executable(engine-sim-app WIN32
-    # Source files
-    src/main.cpp
-    src/engine_sim_application.cpp
-    src/geometry_generator.cpp
-    src/simulation_object.cpp
-    src/piston_object.cpp
-    src/connecting_rod_object.cpp
-    src/ui_element.cpp
-    src/ui_manager.cpp
-    src/cylinder_pressure_gauge.cpp
-    src/ui_math.cpp
-    src/gauge.cpp
-    src/crankshaft_object.cpp
-    src/cylinder_bank_object.cpp
-    src/cylinder_head_object.cpp
-    src/ui_button.cpp
-    src/ui_utilities.cpp
-    src/combustion_chamber_object.cpp
-    src/oscilloscope.cpp
-    src/shaders.cpp
-    src/engine_view.cpp
-    src/right_gauge_cluster.cpp
-    src/cylinder_temperature_gauge.cpp
-    src/labeled_gauge.cpp
-    src/throttle_display.cpp
-    src/afr_cluster.cpp
-    src/fuel_cluster.cpp
-    src/oscilloscope_cluster.cpp
-    src/performance_cluster.cpp
-    src/firing_order_display.cpp
-    src/load_simulation_cluster.cpp
-    src/mixer_cluster.cpp
-    src/info_cluster.cpp
+    target_link_libraries(engine-sim-app PRIVATE
+        engine-sim
+        delta-basic)
 
-    # Include files
-    include/delta.h
-    include/dtv.h
-    include/engine_sim_application.h
-    include/geometry_generator.h
-    include/simulation_object.h
-    include/piston_object.h
-    include/connecting_rod_object.h
-    include/ui_element.h
-    include/ui_manager.h
-    include/cylinder_pressure_gauge.h
-    include/ui_math.h
-    include/units.h
-    include/crankshaft_object.h
-    include/cylinder_bank_object.h
-    include/cylinder_head_object.h
-    include/ui_button.h
-    include/ui_utilities.h
-    include/combustion_chamber_object.h
-    include/oscilloscope.h
-    include/shaders.h
-    include/engine_view.h
-    include/right_gauge_cluster.h
-    include/cylinder_temperature_gauge.h
-    include/labeled_gauge.h
-    include/throttle_display.h
-    include/afr_cluster.h
-    include/fuel_cluster.h
-    include/oscilloscope_cluster.h
-    include/performance_cluster.h
-    include/firing_order_display.h
-    include/load_simulation_cluster.h
-    include/mixer_cluster.h
-    include/info_cluster.h
-)
+    if (WIN32)
+        # SDL2main provides WinMain when building a GUI subsystem executable
+        if (TARGET SDL2::SDL2main)
+            target_link_libraries(engine-sim-app PRIVATE SDL2::SDL2main)
+        endif()
+    endif()
 
-target_link_libraries(engine-sim-app
-    engine-sim
-)
+    if (DTV)
+        target_compile_definitions(engine-sim-app PRIVATE ATG_ENGINE_SIM_VIDEO_CAPTURE)
+        target_link_libraries(engine-sim-app PRIVATE direct-to-video)
+    endif()
 
-if (DTV)
-    target_link_libraries(engine-sim-app
-        direct-to-video)
-endif (DTV)
+    if (PIRANHA_ENABLED)
+        target_link_libraries(engine-sim-app PRIVATE engine-sim-script-interpreter)
+    endif()
 
-if (PIRANHA_ENABLED)
-    target_link_libraries(engine-sim-app
-        engine-sim-script-interpreter)
-endif (PIRANHA_ENABLED)
+    if (DISCORD_ENABLED)
+        target_compile_definitions(engine-sim-app PRIVATE ATG_ENGINE_SIM_DISCORD_ENABLED)
+        target_link_libraries(engine-sim-app PRIVATE discord)
+    endif()
 
-if (DISCORD_ENABLED)
-    add_library(discord-rpc STATIC IMPORTED)
-    set_property(TARGET discord-rpc PROPERTY IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/dependencies/discord/lib/discord-rpc.lib)
-    target_link_libraries(engine-sim-app
-    	discord
-	discord-rpc)
-endif (DISCORD_ENABLED)
+    # Build information
+    configure_file(
+        ${PROJECT_SOURCE_DIR}/include/build_info.h.in
+        ${PROJECT_BINARY_DIR}/generated/build_info.h
+        @ONLY)
+    target_include_directories(engine-sim-app PRIVATE ${PROJECT_BINARY_DIR}/generated)
 
-target_include_directories(engine-sim-app
-    PUBLIC dependencies/submodules)
+    # Put the executable in <build>/bin so that the data directory layout
+    # matches the packaged release (bin/, assets/, es/, delta/)
+    set_target_properties(engine-sim-app PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${PROJECT_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PROJECT_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${PROJECT_BINARY_DIR}/bin
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${PROJECT_BINARY_DIR}/bin)
 
-add_subdirectory(dependencies)
+    # ====================================================
+    # Installation / packaging layout
+    #
+    #   <prefix>/bin/engine-sim-app
+    #   <prefix>/assets/...
+    #   <prefix>/es/...
+    #   <prefix>/delta/{fonts,shaders}
 
-# GTEST
+    install(TARGETS engine-sim-app RUNTIME DESTINATION bin)
+    install(DIRECTORY assets/ DESTINATION assets
+        PATTERN "*.dia" EXCLUDE)
+    install(DIRECTORY es/ DESTINATION es)
+    install(DIRECTORY dependencies/delta-studio/engines/basic/fonts DESTINATION delta)
+    install(DIRECTORY dependencies/delta-studio/engines/basic/shaders/glsl DESTINATION delta/shaders)
+    install(FILES LICENSE README.md CHANGELOG.md DESTINATION .)
+endif()
 
-enable_testing()
+# ========================================================
+# Tests
 
-add_executable(engine-sim-test
-    # Source files
-    test/gas_system_tests.cpp
-    test/function_test.cpp
-    test/synthesizer_tests.cpp
-)
+if (ENGINE_SIM_BUILD_TESTS)
+    # Prefer a system installation of GoogleTest, otherwise download it
+    find_package(GTest QUIET)
+    if (NOT GTest_FOUND)
+        include(FetchContent)
+        FetchContent_Declare(
+            googletest
+            URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
-target_link_libraries(engine-sim-test
-    gtest_main
-    engine-sim
-)
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+        set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+        add_library(GTest::gtest_main ALIAS gtest_main)
+    endif()
 
-include(GoogleTest)
-gtest_discover_tests(engine-sim-test)
+    enable_testing()
+
+    add_executable(engine-sim-test
+        test/gas_system_tests.cpp
+        test/function_test.cpp
+        test/synthesizer_tests.cpp
+    )
+
+    target_link_libraries(engine-sim-test PRIVATE
+        GTest::gtest_main
+        engine-sim)
+
+    include(GoogleTest)
+    gtest_discover_tests(engine-sim-test DISCOVERY_TIMEOUT 60)
+endif()
