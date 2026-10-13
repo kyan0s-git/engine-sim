@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
-## [0.2.0] - Unreleased
+## [0.2.0] - 2026-10-13
 
 ### Platforms and packaging
 - Native Windows, Linux and macOS (Apple Silicon and Intel) versions. The
