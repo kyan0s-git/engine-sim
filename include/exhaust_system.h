@@ -23,6 +23,10 @@ class ExhaustSystem : public Part {
             // Fraction of the gas flowing back into the exhaust from the
             // outlet that is fresh air (rather than exhaust gas)
             double backflowAtmosphericMixing = 0.0;
+
+            // Physics model
+            GasSystem::Model model = GasSystem::Model::Legacy;
+            const thermo::FuelDefinition *fuel = nullptr;
         };
 
     public:
@@ -61,6 +65,7 @@ class ExhaustSystem : public Part {
         double m_velocityDecay;
         double m_backflowAtmosphericMixing;
         int m_index;
+        bool m_engineering;
 
         double m_flow;
 };

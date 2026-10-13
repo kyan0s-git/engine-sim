@@ -103,6 +103,8 @@ jobs:
           ldd "dist/$STAGE/bin/engine-sim-app"
           if ldd "dist/$STAGE/bin/engine-sim-app" | grep -iE "sdl|not found"; then exit 1; fi
           "dist/$STAGE/bin/engine-sim-app" --version
+          "dist/$STAGE/bin/engine-sim-dyno" --data "dist/$STAGE" --from 3000 --to 3000 \
+            --settle 0.5 --measure 0.3 "dist/$STAGE/assets/engines/engineering/audi_i5_engineering.mr"
 
       - name: Verify package (macOS)
         if: runner.os == 'macOS'

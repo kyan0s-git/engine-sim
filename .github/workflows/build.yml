@@ -72,6 +72,15 @@ jobs:
           ./build/engine-sim-script-check --data . --require-running assets/main.mr assets/themes/*.mr \
             $(find assets/engines -name '*.mr' ! -name 'radial.mr' | sort)
 
+      - name: Engineering dyno sweep
+        if: runner.os != 'Windows'
+        # Short sweep of the engineering reference engine; fails if the
+        # engine produces no torque
+        run: |
+          ./build/engine-sim-dyno --data . --from 2000 --to 6000 --step 2000 \
+            --settle 1.0 --measure 0.5 assets/engines/engineering/audi_i5_engineering.mr | tee dyno.csv
+          awk -F, 'NR > 1 && $3 < 100 { print "low torque at " $1 " rpm"; bad = 1 } END { exit bad }' dyno.csv
+
       - name: Smoke test (Linux)
         if: runner.os == 'Linux' && matrix.cc == 'gcc'
         run: |

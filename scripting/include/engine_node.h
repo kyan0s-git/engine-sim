@@ -52,7 +52,19 @@ namespace es_script {
             parameters.exhaustSystemCount = (int)exhaustSystems.size();
             parameters.intakeCount = (int)intakes.size();
             parameters.throttle = m_throttle->generate();
+
+            std::vector<std::string> warnings;
+            resolvePhysicsParameters(&parameters, &warnings);
             engine->initialize(parameters);
+            for (const std::string &warning : warnings) {
+                engine->addWarning(warning);
+            }
+
+            // The fuel is needed by the intakes and exhausts of the
+            // engineering model
+            Fuel *fuel = engine->getFuel();
+            m_fuel->generate(fuel, &context);
+            checkFuel(engine);
 
             {
                 int i = 0;
@@ -118,9 +130,6 @@ namespace es_script {
                 meanPistonSpeedToTurbulence->addSample(s, s * 0.5);
             }
 
-            Fuel *fuel = engine->getFuel();
-            m_fuel->generate(fuel, &context);
-
             CombustionChamber::Parameters ccParams;
             ccParams.CrankcasePressure = units::pressure(1.0, units::atm);
             ccParams.Fuel = fuel;
@@ -129,11 +138,55 @@ namespace es_script {
             ccParams.MeanPistonSpeedToTurbulence = meanPistonSpeedToTurbulence;
             ccParams.HeatTransferCoefficient = parameters.heatTransferCoefficient;
             ccParams.BlockTemperature = parameters.blockTemperature;
+            ccParams.WallTemperature = parameters.wallTemperature;
+            ccParams.HeatTransferMultiplier = parameters.heatTransferMultiplier;
+
+            engine->initializeFriction();
+            ccParams.PistonFriction = !engine->usesFrictionModel();
 
             for (int i = 0; i < engine->getCylinderCount(); ++i) {
                 ccParams.Piston = engine->getPiston(i);
                 ccParams.Head = engine->getHead(ccParams.Piston->getCylinderBank()->getIndex());
                 engine->getChamber(i)->initialize(ccParams);
+            }
+        }
+
+        // Converts the physics model names of the script into parameters
+        void resolvePhysicsParameters(
+            Engine::Parameters *parameters,
+            std::vector<std::string> *warnings) const
+        {
+            if (m_physicsModel == "engineering") {
+                parameters->physicsModel = GasSystem::Model::Engineering;
+            }
+            else {
+                parameters->physicsModel = GasSystem::Model::Legacy;
+                if (m_physicsModel != "legacy" && !m_physicsModel.empty()) {
+                    warnings->push_back(
+                        "Unknown physics_model \"" + m_physicsModel + "\"; using \"legacy\"");
+                }
+            }
+
+            const bool engineering =
+                parameters->physicsModel == GasSystem::Model::Engineering;
+            if (!EngineFriction::parseModel(
+                m_frictionModel, engineering, &parameters->friction.model))
+            {
+                warnings->push_back("Unknown friction_model \"" + m_frictionModel + "\"");
+            }
+
+            if (!EngineFriction::parseValvetrain(
+                m_valvetrainType,
+                &parameters->friction.valvetrain,
+                &parameters->friction.rollerFollowers))
+            {
+                warnings->push_back("Unknown valvetrain_type \"" + m_valvetrainType + "\"");
+            }
+        }
+
+        void checkFuel(Engine *engine) const {
+            if (!engine->getFuel()->isKnownType()) {
+                engine->addWarning("Unknown fuel type; using gasoline");
             }
         }
 
@@ -176,6 +229,24 @@ namespace es_script {
             addInput("heat_transfer_coefficient", &m_parameters.heatTransferCoefficient);
             addInput("block_temperature", &m_parameters.blockTemperature);
 
+            addInput("physics_model", &m_physicsModel);
+            addInput("wall_temperature", &m_parameters.wallTemperature);
+            addInput("heat_transfer_multiplier", &m_parameters.heatTransferMultiplier);
+            addInput("friction_model", &m_frictionModel);
+            addInput("friction_multiplier", &m_parameters.friction.multiplier);
+            addInput("valvetrain_type", &m_valvetrainType);
+            addInput("valves_per_cylinder", &m_parameters.friction.valvesPerCylinder);
+            addInput("max_valve_lift", &m_parameters.friction.maxValveLift);
+            addInput("main_bearing_diameter", &m_parameters.friction.mainBearingDiameter);
+            addInput("main_bearing_length", &m_parameters.friction.mainBearingLength);
+            addInput("main_bearing_count", &m_parameters.friction.mainBearingCount);
+            addInput("chen_flynn_constant", &m_parameters.friction.chenFlynnConstant);
+            addInput("chen_flynn_peak_pressure", &m_parameters.friction.chenFlynnPeakPressure);
+            addInput("chen_flynn_piston_speed", &m_parameters.friction.chenFlynnPistonSpeed);
+            addInput(
+                "chen_flynn_piston_speed_squared",
+                &m_parameters.friction.chenFlynnPistonSpeedSquared);
+
             ObjectReferenceNode<EngineNode>::registerInputs();
         }
 
@@ -191,6 +262,9 @@ namespace es_script {
         FuelNode *m_fuel = nullptr;
 
         Engine::Parameters m_parameters;
+        std::string m_physicsModel = "legacy";
+        std::string m_frictionModel = "auto";
+        std::string m_valvetrainType = "dohc_bucket";
         std::vector<CrankshaftNode *> m_crankshafts;
         std::vector<CylinderBankNode *> m_cylinderBanks;
     };

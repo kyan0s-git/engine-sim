@@ -315,6 +315,18 @@ void PistonEngineSimulator::placeCylinder(int i) {
 
 void PistonEngineSimulator::simulateStep_() {
     const double timestep = getTimestep();
+
+    // Friction torque of the engine's friction model (the legacy model uses
+    // the constant friction torque of each crankshaft)
+    if (m_engine->usesFrictionModel()) {
+        const int crankCount = m_engine->getCrankshaftCount();
+        const double torque = m_engine->updateFriction() / crankCount;
+        for (int i = 0; i < crankCount; ++i) {
+            m_crankshaftFrictionConstraints[i].m_minTorque = -torque;
+            m_crankshaftFrictionConstraints[i].m_maxTorque = torque;
+        }
+    }
+
     IgnitionModule *im = m_engine->getIgnitionModule();
     im->update(timestep);
 

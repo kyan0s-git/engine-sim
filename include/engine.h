@@ -12,6 +12,7 @@
 #include "ignition_module.h"
 #include "intake.h"
 #include "combustion_chamber.h"
+#include "engine_friction.h"
 #include "units.h"
 #include "throttle.h"
 
@@ -56,6 +57,16 @@ class Engine : public Part {
             // Heat transfer between the cylinder charge and the engine block
             double heatTransferCoefficient = 100.0;  // W / (m^2 K)
             double blockTemperature = units::celcius(90.0);
+
+            // Physics model (see GasSystem::Model)
+            GasSystem::Model physicsModel = GasSystem::Model::Legacy;
+
+            // Engineering model: Woschni heat transfer
+            double wallTemperature = 450.0;
+            double heatTransferMultiplier = 1.0;
+
+            // Mechanical friction
+            EngineFriction::Parameters friction;
         };
 
     public:
@@ -123,6 +134,30 @@ class Engine : public Part {
         int getFluidSimulationSteps() const { return m_fluidSimulationSteps; }
         double getHeatTransferCoefficient() const { return m_heatTransferCoefficient; }
         double getBlockTemperature() const { return m_blockTemperature; }
+
+        GasSystem::Model getPhysicsModel() const { return m_physicsModel; }
+        bool isEngineering() const { return m_physicsModel == GasSystem::Model::Engineering; }
+        double getWallTemperature() const { return m_wallTemperature; }
+        double getHeatTransferMultiplier() const { return m_heatTransferMultiplier; }
+
+        // Geometric compression ratio (computed by calculateDisplacement())
+        double getCompressionRatio() const { return m_compressionRatio; }
+
+        // Sets up the friction model from the engine geometry; call after
+        // the engine has been built
+        virtual void initializeFriction();
+        const EngineFriction &getFrictionModel() const { return m_friction; }
+        bool usesFrictionModel() const { return m_friction.getModel() != EngineFriction::Model::Legacy; }
+
+        // Updates the friction torque of the friction model for the current
+        // operating point; returns the friction torque [N m]
+        double updateFriction();
+        double getFrictionTorque() const { return m_frictionTorque; }
+        double getFrictionMeanEffectivePressure() const { return m_fmep; }
+
+        // Problems found while building the engine (e.g. unknown names)
+        void addWarning(const std::string &warning) { m_warnings.push_back(warning); }
+        const std::vector<std::string> &getWarnings() const { return m_warnings; }
 
         virtual Simulator *createSimulator(Vehicle *vehicle, Transmission *transmission);
 
@@ -199,6 +234,17 @@ class Engine : public Part {
 
         double m_throttleValue;
         double m_displacement;
+        double m_compressionRatio;
+
+        GasSystem::Model m_physicsModel;
+        double m_wallTemperature;
+        double m_heatTransferMultiplier;
+        EngineFriction::Parameters m_frictionParameters;
+        EngineFriction m_friction;
+        double m_frictionTorque;
+        double m_fmep;
+
+        std::vector<std::string> m_warnings;
 };
 
 #endif /* ATG_ENGINE_SIM_ENGINE_H */

@@ -42,6 +42,8 @@ namespace es_script {
             addInput("low_efficiency_attenuation", &m_parameters.lowEfficiencyAttenuation);
             addInput("max_turbulence_effect", &m_parameters.maxTurbulenceEffect);
             addInput("max_dilution_effect", &m_parameters.maxDilutionEffect);
+            addInput("type", &m_parameters.type);
+            addInput("combustion_efficiency", &m_parameters.combustionEfficiency);
 
             ObjectReferenceNode<FuelNode>::registerInputs();
         }

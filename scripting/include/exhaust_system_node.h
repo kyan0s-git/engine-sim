@@ -20,6 +20,12 @@ namespace es_script {
             ExhaustSystem::Parameters parameters = m_parameters;
             parameters.impulseResponse = m_impulseResponse->generate(context);
 
+            Engine *engine = context->getEngine();
+            if (engine != nullptr) {
+                parameters.model = engine->getPhysicsModel();
+                parameters.fuel = &engine->getFuel()->getDefinition();
+            }
+
             exhaust->initialize(parameters);
 
             return exhaust;

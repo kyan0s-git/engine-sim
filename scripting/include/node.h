@@ -42,10 +42,14 @@ namespace es_script {
 
         void readAllInputs() {
             for (auto i : m_inputMap) {
+                // Inputs that the script's node definition doesn't declare
+                // aren't connected and keep their default values
+                if (*i.second.input == nullptr) continue;
+
                 if (i.second.type == InputTarget::Type::Atomic
                     || i.second.type == InputTarget::Type::Object)
                 {
-                    (*m_inputMap[i.first].input)->fullCompute(i.second.memoryTarget);
+                    (*i.second.input)->fullCompute(i.second.memoryTarget);
                 }
             }
         }

@@ -23,6 +23,10 @@ class WankelEngine : public Engine {
         virtual void destroy() override;
 
         virtual void calculateDisplacement() override;
+
+        // The piston engine friction models don't apply to rotary engines;
+        // the eccentric shaft's friction torque is used
+        virtual void initializeFriction() override;
         virtual Simulator *createSimulator(Vehicle *vehicle, Transmission *transmission) override;
 
         int getRotorCount() const { return m_rotorCount; }

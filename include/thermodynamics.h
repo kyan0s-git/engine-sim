@@ -77,8 +77,9 @@ namespace thermo {
         double e(double T) const;
         double cv(double T) const;
 
-        // Solves e(T) = e_target; T_guess is used as the starting point
-        double temperature(double e_target, double T_guess) const;
+        // Solves e(T) = e_target; T_guess is used as the starting point.
+        // Optionally returns cv at the solution.
+        double temperature(double e_target, double T_guess, double *cv_out = nullptr) const;
     };
 
     EnergyPolynomial makeEnergyPolynomial(const NasaPolynomial &poly);
@@ -135,6 +136,10 @@ namespace thermo {
         double density = 0;         // kg/m^3 (liquid or gas at 1 atm, 15 C)
 
         FlameSpeedParameters flameSpeed;
+
+        // Equivalence ratio range in which a spark can ignite the mixture
+        double leanLimit = 0.5;
+        double richLimit = 2.0;
 
         NasaPolynomial poly;
         EnergyPolynomial energy;

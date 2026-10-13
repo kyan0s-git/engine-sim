@@ -63,6 +63,10 @@ public node fuel => __engine_sim__fuel {
     input low_efficiency_attenuation [float]: 0.6;
     input max_turbulence_effect [float]: 2.0;
     input max_dilution_effect [float]: 10.0;
+
+    // Engineering physics model (see docs/engineering.md)
+    input type [string]: "gasoline";
+    input combustion_efficiency [float]: 0.97;
     alias output __out [fuel_channel];
 }
 
@@ -100,6 +104,22 @@ private node _engine => __engine_sim__engine {
     input heat_transfer_coefficient [float];
     input block_temperature [float];
 
+    input physics_model [string];
+    input wall_temperature [float];
+    input heat_transfer_multiplier [float];
+    input friction_model [string];
+    input friction_multiplier [float];
+    input valvetrain_type [string];
+    input valves_per_cylinder [int];
+    input max_valve_lift [float];
+    input main_bearing_diameter [float];
+    input main_bearing_length [float];
+    input main_bearing_count [int];
+    input chen_flynn_constant [float];
+    input chen_flynn_peak_pressure [float];
+    input chen_flynn_piston_speed [float];
+    input chen_flynn_piston_speed_squared [float];
+
     alias output __out [engine_channel];
 }
 
@@ -135,6 +155,33 @@ public node engine {
     input heat_transfer_coefficient: 100.0;
     input block_temperature: celcius(90);
 
+    // Physics model: "legacy" (the original model the bundled engines are
+    // tuned for) or "engineering" (see docs/engineering.md)
+    input physics_model: "legacy";
+
+    // Engineering model: Woschni heat transfer to walls at this mean
+    // temperature, scaled by the multiplier
+    input wall_temperature: 450 * units.K;
+    input heat_transfer_multiplier: 1.0;
+
+    // Engineering model: mechanical friction. "auto" selects
+    // "patton_nitschke_heywood" for the engineering model and "legacy"
+    // (the crankshaft friction torque) otherwise; "chen_flynn" is the
+    // calibratable alternative. Bearing dimensions of 0 are derived from the
+    // bore.
+    input friction_model: "auto";
+    input friction_multiplier: 1.0;
+    input valvetrain_type: "dohc_bucket";
+    input valves_per_cylinder: 4;
+    input max_valve_lift: 10.0 * units.mm;
+    input main_bearing_diameter: 0.0;
+    input main_bearing_length: 0.0;
+    input main_bearing_count: 0;
+    input chen_flynn_constant: 0.4 * units.bar;
+    input chen_flynn_peak_pressure: 0.005;
+    input chen_flynn_piston_speed: 0.08 * units.bar / (units.m / units.sec);
+    input chen_flynn_piston_speed_squared: 0.0009 * units.bar / ((units.m / units.sec) * (units.m / units.sec));
+
     alias output __out [_engine]:
         _engine(
             name: name,
@@ -159,7 +206,23 @@ public node engine {
             noise: noise,
 
             heat_transfer_coefficient: heat_transfer_coefficient,
-            block_temperature: block_temperature
+            block_temperature: block_temperature,
+
+            physics_model: physics_model,
+            wall_temperature: wall_temperature,
+            heat_transfer_multiplier: heat_transfer_multiplier,
+            friction_model: friction_model,
+            friction_multiplier: friction_multiplier,
+            valvetrain_type: valvetrain_type,
+            valves_per_cylinder: valves_per_cylinder,
+            max_valve_lift: max_valve_lift,
+            main_bearing_diameter: main_bearing_diameter,
+            main_bearing_length: main_bearing_length,
+            main_bearing_count: main_bearing_count,
+            chen_flynn_constant: chen_flynn_constant,
+            chen_flynn_peak_pressure: chen_flynn_peak_pressure,
+            chen_flynn_piston_speed: chen_flynn_piston_speed,
+            chen_flynn_piston_speed_squared: chen_flynn_piston_speed_squared
         );
 }
 
@@ -227,6 +290,10 @@ private node _wankel_engine => __engine_sim__wankel_engine {
     input heat_transfer_coefficient [float];
     input block_temperature [float];
 
+    input physics_model [string];
+    input wall_temperature [float];
+    input heat_transfer_multiplier [float];
+
     alias output __out [engine_channel];
 }
 
@@ -262,6 +329,11 @@ public node wankel_engine {
     input heat_transfer_coefficient: 100.0;
     input block_temperature: celcius(90);
 
+    // See engine
+    input physics_model: "legacy";
+    input wall_temperature: 450 * units.K;
+    input heat_transfer_multiplier: 1.0;
+
     alias output __out [_wankel_engine]:
         _wankel_engine(
             name: name,
@@ -288,7 +360,11 @@ public node wankel_engine {
             noise: noise,
 
             heat_transfer_coefficient: heat_transfer_coefficient,
-            block_temperature: block_temperature
+            block_temperature: block_temperature,
+
+            physics_model: physics_model,
+            wall_temperature: wall_temperature,
+            heat_transfer_multiplier: heat_transfer_multiplier
         );
 }
 
@@ -709,6 +785,8 @@ public node intake_parameters {
     input runner_length: 4.0 * units.inch;
     input runner_flow_rate: k_carb(200.0);
     input velocity_decay: 0.25;
+    input lambda: 1.0;
+    input evaporative_cooling: 0.5;
 }
 
 private node _intake => __engine_sim__intake {
@@ -722,6 +800,8 @@ private node _intake => __engine_sim__intake {
     input throttle_gamma [float];
     input runner_length [float];
     input velocity_decay [float];
+    input lambda [float];
+    input evaporative_cooling [float];
     alias output __out [intake_channel];
 }
 
@@ -737,6 +817,11 @@ public node intake {
     input throttle_gamma: parameters.throttle_gamma;
     input runner_length: parameters.runner_length;
     input velocity_decay: parameters.velocity_decay;
+
+    // Engineering model: metered air-fuel ratio relative to stoichiometric
+    // and the fraction of the fuel's latent heat taken from the air
+    input lambda: parameters.lambda;
+    input evaporative_cooling: parameters.evaporative_cooling;
     alias output __out [_intake]:
         _intake(
             plenum_volume: plenum_volume,
@@ -748,7 +833,9 @@ public node intake {
             idle_throttle_plate_position: idle_throttle_plate_position,
             throttle_gamma: throttle_gamma,
             runner_length: runner_length,
-            velocity_decay: velocity_decay
+            velocity_decay: velocity_decay,
+            lambda: lambda,
+            evaporative_cooling: evaporative_cooling
         );
 }
 

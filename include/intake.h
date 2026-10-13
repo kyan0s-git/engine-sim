@@ -34,6 +34,14 @@ class Intake : public Part {
 
             // Velocity decay factor
             double VelocityDecay = 0.5;
+
+            // Engineering physics model: metered air-fuel ratio relative to
+            // stoichiometric and the fraction of the fuel's latent heat of
+            // vaporization taken from the air
+            GasSystem::Model Model = GasSystem::Model::Legacy;
+            const thermo::FuelDefinition *Fuel = nullptr;
+            double Lambda = 1.0;
+            double EvaporativeCooling = 0.5;
         };
 
     public:
@@ -53,6 +61,10 @@ class Intake : public Part {
         inline double getRunnerLength() const { return m_runnerLength; }
         inline double getPlenumCrossSectionArea() const { return m_crossSectionArea; }
         inline double getVelocityDecay() const { return m_velocityDecay; }
+        inline double getLambda() const { return m_lambda; }
+
+        // Temperature of the fresh charge after fuel evaporation [K]
+        inline double getChargeTemperature() const { return m_chargeTemperature; }
 
         GasSystem m_system;
         double m_throttle;
@@ -70,6 +82,11 @@ class Intake : public Part {
         double m_idleThrottlePlatePosition;
         double m_runnerLength;
         double m_velocityDecay;
+
+        GasSystem::Model m_model;
+        const thermo::FuelDefinition *m_fuel;
+        double m_lambda;
+        double m_chargeTemperature;
 
         GasSystem m_atmosphere;
 };

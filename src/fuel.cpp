@@ -15,6 +15,9 @@ Fuel::Fuel() {
     m_maxTurbulenceEffect = 0.0;
     m_burningEfficiencyRandomness = 0.0;
     m_lowEfficiencyAttenuation = 0.0;
+    m_combustionEfficiency = 1.0;
+    m_knownType = true;
+    m_definition = thermo::defaultFuel();
 }
 
 Fuel::~Fuel() {
@@ -32,6 +35,12 @@ void Fuel::initialize(const Parameters &params) {
     m_maxDilutionEffect = params.maxDilutionEffect;
     m_maxTurbulenceEffect = params.maxTurbulenceEffect;
     m_lowEfficiencyAttenuation = params.lowEfficiencyAttenuation;
+    m_combustionEfficiency = params.combustionEfficiency;
+
+    m_knownType = params.type.empty() || thermo::findFuel(params.type, &m_definition);
+    if (params.type.empty() || !m_knownType) {
+        m_definition = thermo::defaultFuel();
+    }
 }
 
 double Fuel::flameSpeed(
@@ -48,6 +57,10 @@ double Fuel::flameSpeed(
     return m_turbulenceToFlameSpeedRatio->sampleTriangle((turbulence / S_L) * p_adjustment) * S_L;
 }
 
+double Fuel::turbulentFlameSpeed(double turbulence, double S_L) const {
+    return m_turbulenceToFlameSpeedRatio->sampleTriangle(turbulence / S_L) * S_L;
+}
+
 double Fuel::laminarBurningVelocity(double molecularAfr, double T, double P) const {
     // Assuming fuel is gasoline
     constexpr double er_m = 1.21;
@@ -62,4 +75,37 @@ double Fuel::laminarBurningVelocity(double molecularAfr, double T, double P) con
     const double P_ratio = P / units::pressure(1.0, units::atm);
 
     return S_L_0 * std::pow(T_ratio, alpha) * std::pow(P_ratio, beta);
+}
+
+double Fuel::laminarBurningVelocityEngineering(
+    double phi,
+    double T_u,
+    double P,
+    double residualFraction) const
+{
+    // S_L = S_L0(phi) (T_u / 298 K)^alpha (P / 1 atm)^beta (1 - c x_r^d)
+    // with S_L0 = B_m + B_phi (phi - phi_m)^2 (Metghalchi & Keck form)
+    const thermo::FlameSpeedParameters &params = m_definition.flameSpeed;
+    const double phi_c = std::fmin(std::fmax(phi, 0.4), 2.0);
+
+    double alpha, beta, dilution;
+    if (params.correlation == thermo::FlameSpeedParameters::Correlation::RhodesKeck) {
+        alpha = 2.4 - 0.271 * std::pow(phi_c, 3.51);
+        beta = -0.357 + 0.14 * std::pow(phi_c, 2.77);
+        dilution = 1 - 2.06 * std::pow(std::fmax(residualFraction, 0.0), 0.77);
+    }
+    else {
+        alpha = 2.18 - 0.8 * (phi_c - 1);
+        beta = -0.16 + 0.22 * (phi_c - 1);
+        dilution = 1 - 2.1 * std::fmax(residualFraction, 0.0);
+    }
+
+    const double S_L_0 = params.B_m + params.B_phi * (phi_c - params.phi_m) * (phi_c - params.phi_m);
+    const double T_ratio = std::fmax(T_u, 200.0) / units::kelvin(298);
+    const double P_ratio = std::fmax(P, 1000.0) / units::pressure(1.0, units::atm);
+
+    // A small floor keeps very dilute or off-stoichiometric flames moving
+    // so that the burn always completes
+    return std::fmax(S_L_0 * std::fmax(dilution, 0.1), 0.02)
+        * std::pow(T_ratio, alpha) * std::pow(P_ratio, beta);
 }

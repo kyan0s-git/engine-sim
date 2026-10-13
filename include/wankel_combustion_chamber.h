@@ -21,6 +21,7 @@ class WankelCombustionChamber : public CombustionChamber {
 
         virtual double getFrictionForce() const override;
         virtual double getVolume() const override;
+        virtual double getSweptVolume() const override;
         virtual double pistonSpeed() const override;
 
         virtual double calculateIntakeFlowRate() const override;

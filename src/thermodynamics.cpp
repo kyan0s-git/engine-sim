@@ -214,29 +214,44 @@ double EnergyPolynomial::cv(double T) const {
     }
 }
 
-double EnergyPolynomial::temperature(double e_target, double T_guess) const {
-    if (e_target <= 0 || cv_ref_R <= 0) return 0;
+double EnergyPolynomial::temperature(double e_target, double T_guess, double *cv_out) const {
+    if (e_target <= 0 || cv_ref_R <= 0) {
+        if (cv_out != nullptr) *cv_out = R * cv_ref_R;
+        return 0;
+    }
 
     const double e_ref = R * cv_ref_R * T_ref;
     if (e_target <= e_ref) {
+        if (cv_out != nullptr) *cv_out = R * cv_ref_R;
         return e_target / (R * cv_ref_R);
     }
 
     const double e_max = e(T_max);
     if (e_target >= e_max) {
-        return T_max + (e_target - e_max) / cv(T_max);
+        const double cv_max = cv(T_max);
+        if (cv_out != nullptr) *cv_out = cv_max;
+        return T_max + (e_target - e_max) / cv_max;
     }
 
     // Newton iteration; e(T) is monotonic and nearly linear so this
     // converges in a few iterations from a nearby guess
-    double T = std::fmin(std::fmax(T_guess, T_ref), T_max);
+    double T = (T_guess < T_ref) ? T_ref : ((T_guess > T_max) ? T_max : T_guess);
     for (int i = 0; i < 32; ++i) {
-        const double dT = (e(T) - e_target) / cv(T);
-        T = std::fmin(std::fmax(T - dT, T_ref), T_max);
+        const double *c = (T < T_mid) ? low : high;
+        const double f = R * evaluate(c, T) - e_target;
+        const double df = R * evaluateDerivative(c, T);
+        const double dT = f / df;
+        T -= dT;
+        T = (T < T_ref) ? T_ref : ((T > T_max) ? T_max : T);
 
-        if (std::abs(dT) < 1E-7 * T) break;
+        if (std::abs(dT) < 1E-7 * T) {
+            // cv barely changes over the last step
+            if (cv_out != nullptr) *cv_out = df;
+            return T;
+        }
     }
 
+    if (cv_out != nullptr) *cv_out = cv(T);
     return T;
 }
 
@@ -346,6 +361,8 @@ FuelDefinition blendFuels(
     fuel.latentHeat = (1 - w_b) * a.latentHeat + w_b * b.latentHeat;
     fuel.density = (1 - v_b) * a.density + v_b * b.density;
     fuel.flameSpeed = (v_b < 0.5) ? a.flameSpeed : b.flameSpeed;
+    fuel.leanLimit = (1 - v_b) * a.leanLimit + v_b * b.leanLimit;
+    fuel.richLimit = (1 - v_b) * a.richLimit + v_b * b.richLimit;
 
     for (int i = 0; i < 7; ++i) {
         fuel.poly.low[i] = x_a * a.poly.low[i] + x_b * b.poly.low[i];
@@ -421,11 +438,14 @@ namespace {
                 Poly_C3H8, 3 * M_C + 8 * M_H,
                 metghalchiKeck(1.08, 34.2, -138.7)));
 
-            fuels.push_back(makeFuel(
+            FuelDefinition hydrogen = makeFuel(
                 "hydrogen", 0, 2, 0,
                 119.96e6, 0.0, 0.085,
                 Poly_H2, 2 * M_H,
-                metghalchiKeck(1.8, 290.0, -125.0)));    // [E]
+                metghalchiKeck(1.8, 290.0, -125.0));     // [E]
+            hydrogen.leanLimit = 0.15;
+            hydrogen.richLimit = 4.0;
+            fuels.push_back(hydrogen);
         }
     };
 

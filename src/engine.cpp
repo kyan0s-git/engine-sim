@@ -46,6 +46,14 @@ Engine::Engine() {
     m_fluidSimulationSteps = 8;
     m_heatTransferCoefficient = 100.0;
     m_blockTemperature = units::celcius(90.0);
+
+    m_displacement = 0.0;
+    m_compressionRatio = 0.0;
+    m_physicsModel = GasSystem::Model::Legacy;
+    m_wallTemperature = 450.0;
+    m_heatTransferMultiplier = 1.0;
+    m_frictionTorque = 0.0;
+    m_fmep = 0.0;
 }
 
 Engine::~Engine() {
@@ -82,6 +90,10 @@ void Engine::initialize(const Parameters &params) {
     m_fluidSimulationSteps = std::max(1, params.fluidSimulationSteps);
     m_heatTransferCoefficient = params.heatTransferCoefficient;
     m_blockTemperature = params.blockTemperature;
+    m_physicsModel = params.physicsModel;
+    m_wallTemperature = params.wallTemperature;
+    m_heatTransferMultiplier = params.heatTransferMultiplier;
+    m_frictionParameters = params.friction;
 
     m_crankshafts = new Crankshaft[m_crankshaftCount];
     m_cylinderBanks = new CylinderBank[m_cylinderBankCount];
@@ -99,6 +111,7 @@ void Engine::initialize(const Parameters &params) {
     for (int i = 0; i < m_cylinderCount; ++i) {
         m_combustionChambers[i] = createCombustionChamber(i);
         m_combustionChambers[i]->setEngine(this);
+        m_combustionChambers[i]->setRandomSeed(static_cast<unsigned int>(i));
     }
 }
 
@@ -299,17 +312,94 @@ void Engine::calculateDisplacement() {
     }
 
     double displacement = 0;
+    double compressionRatio = 0;
+    int compressionRatioSamples = 0;
     for (int i = 0; i < m_cylinderCount; ++i) {
         const Piston &piston = m_pistons[i];
         const CylinderBank &bank = *piston.getCylinderBank();
 
         if (min_s[i] < max_s[i]) {
             const double r = bank.getBore() / 2.0;
-            displacement += constants::pi * r * r * (max_s[i] - min_s[i]);
+            const double area = constants::pi * r * r;
+            const double swept = area * (max_s[i] - min_s[i]);
+            displacement += swept;
+
+            // Clearance volume at TDC (see CombustionChamber::getVolume())
+            const CylinderHead &head = m_heads[bank.getIndex()];
+            const double clearance =
+                area * (bank.getDeckHeight() - max_s[i] - piston.getCompressionHeight())
+                + head.getCombustionChamberVolume()
+                - piston.getDisplacement();
+            if (clearance > 0) {
+                compressionRatio += (swept + clearance) / clearance;
+                ++compressionRatioSamples;
+            }
         }
     }
 
     m_displacement = displacement;
+    m_compressionRatio = (compressionRatioSamples > 0)
+        ? compressionRatio / compressionRatioSamples
+        : 0.0;
+}
+
+void Engine::initializeFriction() {
+    calculateDisplacement();
+
+    EngineFriction::Geometry geometry;
+    geometry.cylinders = m_cylinderCount;
+    geometry.banks = m_cylinderBankCount;
+    geometry.displacement = m_displacement;
+    geometry.compressionRatio = (m_compressionRatio > 0) ? m_compressionRatio : 10.0;
+
+    double bore = 0;
+    for (int i = 0; i < m_cylinderCount; ++i) {
+        bore += m_pistons[i].getCylinderBank()->getBore();
+    }
+
+    geometry.bore = (m_cylinderCount > 0) ? bore / m_cylinderCount : 0.0;
+    geometry.stroke = (geometry.bore > 0 && m_cylinderCount > 0)
+        ? m_displacement / (m_cylinderCount * constants::pi * geometry.bore * geometry.bore / 4)
+        : 0.0;
+
+    for (int i = 0; i < m_crankshaftCount; ++i) {
+        geometry.crankJournals += m_crankshafts[i].getRodJournalCount();
+    }
+
+    EngineFriction::Parameters params = m_frictionParameters;
+    if (geometry.bore <= 0 || geometry.stroke <= 0) {
+        params.model = EngineFriction::Model::Legacy;
+    }
+
+    m_friction.initialize(params, geometry);
+}
+
+double Engine::updateFriction() {
+    if (!usesFrictionModel()) {
+        m_fmep = 0;
+        m_frictionTorque = 0;
+        return 0;
+    }
+
+    double peakPressure = 0;
+    int samples = 0;
+    for (int i = 0; i < m_cylinderCount; ++i) {
+        const CombustionChamber::CycleMetrics &metrics =
+            m_combustionChambers[i]->getLastCycleMetrics();
+        if (metrics.valid) {
+            peakPressure += metrics.peakPressure;
+            ++samples;
+        }
+    }
+
+    if (samples > 0) peakPressure /= samples;
+
+    const double intakePressureRatio =
+        getManifoldPressure() / units::pressure(1.0, units::atm);
+    m_fmep = m_friction.fmep(getSpeed(), intakePressureRatio, peakPressure);
+    m_frictionTorque = m_friction.torque(m_fmep);
+
+    return m_frictionTorque;
 }
 
 double Engine::getIntakeFlowRate() const {
@@ -335,6 +425,17 @@ double Engine::getManifoldPressure() const {
 }
 
 double Engine::getIntakeAfr() const {
+    if (isEngineering()) {
+        double air = 0, fuel = 0;
+        for (int i = 0; i < m_intakeCount; ++i) {
+            const thermo::Composition c = m_intakes[i].m_system.composition();
+            air += c.n[thermo::O2] / thermo::air::x_O2 * thermo::air::molarMass;
+            fuel += c.n[thermo::Fuel] * m_fuel.getDefinition().molarMass;
+        }
+
+        return (fuel > 0) ? air / fuel : 0.0;
+    }
+
     double totalOxygen = 0.0;
     double totalFuel = 0.0;
     for (int i = 0; i < m_intakeCount; ++i) {
@@ -354,6 +455,18 @@ double Engine::getIntakeAfr() const {
 }
 
 double Engine::getExhaustO2() const {
+    if (isEngineering()) {
+        // Mass fraction of oxygen
+        double o2 = 0, mass = 0;
+        for (int i = 0; i < m_exhaustSystemCount; ++i) {
+            const GasSystem &system = m_exhaustSystems[i].m_system;
+            o2 += system.n_o2() * thermo::species(thermo::O2).molarMass;
+            mass += system.mass();
+        }
+
+        return (mass > 0) ? o2 / mass : 0.0;
+    }
+
     double totalInert = 0.0;
     double totalOxygen = 0.0;
     double totalFuel = 0.0;
@@ -390,11 +503,15 @@ double Engine::getTotalFuelMassConsumed() const {
         n_fuelConsumed += m_intakes[i].m_totalFuelInjected;
     }
 
-    return n_fuelConsumed * m_fuel.getMolecularMass();
+    return n_fuelConsumed * (isEngineering()
+        ? m_fuel.getDefinition().molarMass
+        : m_fuel.getMolecularMass());
 }
 
 double Engine::getTotalVolumeFuelConsumed() const {
-    return getTotalFuelMassConsumed() / m_fuel.getDensity();
+    return getTotalFuelMassConsumed() / (isEngineering()
+        ? m_fuel.getDefinition().density
+        : m_fuel.getDensity());
 }
 
 int Engine::getMaxDepth() const {

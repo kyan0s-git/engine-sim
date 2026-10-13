@@ -153,7 +153,17 @@ namespace es_script {
             parameters.exhaustSystemCount = static_cast<int>(exhaustSystems.size());
             parameters.intakeCount = static_cast<int>(intakes.size());
             parameters.throttle = m_throttle->generate();
+
+            std::vector<std::string> warnings;
+            resolvePhysicsParameters(&parameters, &warnings);
             engine->initialize(parameters);
+            for (const std::string &warning : warnings) {
+                engine->addWarning(warning);
+            }
+
+            Fuel *fuel = engine->getFuel();
+            m_fuel->generate(fuel, &context);
+            checkFuel(engine);
 
             {
                 int i = 0;
@@ -184,9 +194,6 @@ namespace es_script {
 
             m_ignitionModule->generate(engine, &context);
 
-            Fuel *fuel = engine->getFuel();
-            m_fuel->generate(fuel, &context);
-
             Function *meanPistonSpeedToTurbulence = engine->addOwnedObject(new Function);
             meanPistonSpeedToTurbulence->initialize(30, 1);
             for (int i = 0; i < 30; ++i) {
@@ -202,6 +209,10 @@ namespace es_script {
             ccParams.MeanPistonSpeedToTurbulence = meanPistonSpeedToTurbulence;
             ccParams.HeatTransferCoefficient = parameters.heatTransferCoefficient;
             ccParams.BlockTemperature = parameters.blockTemperature;
+            ccParams.WallTemperature = parameters.wallTemperature;
+            ccParams.HeatTransferMultiplier = parameters.heatTransferMultiplier;
+
+            engine->initializeFriction();
 
             for (int i = 0; i < engine->getCylinderCount(); ++i) {
                 ccParams.Piston = engine->getPiston(i);

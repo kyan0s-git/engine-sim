@@ -14,6 +14,7 @@ ExhaustSystem::ExhaustSystem() {
     m_flow = 0;
     m_index = -1;
     m_impulseResponse = nullptr;
+    m_engineering = false;
 }
 
 ExhaustSystem::~ExhaustSystem() {
@@ -24,10 +25,23 @@ void ExhaustSystem::initialize(const Parameters &params) {
     const double systemWidth = std::sqrt(params.collectorCrossSectionArea);
     const double volume = params.collectorCrossSectionArea * params.length;
     const double systemLength = params.length;
+
+    m_engineering = (params.model == GasSystem::Model::Engineering);
+    GasSystem::Mix initialMix;
+    if (m_engineering) {
+        m_system.setModel(params.model, params.fuel);
+        m_atmosphere.setModel(params.model, params.fuel);
+
+        // Starts out filled with air
+        initialMix = GasSystem::Mix::fromComposition(
+            thermo::freshCharge(thermo::defaultFuel(), 0.0));
+    }
+
     m_system.initialize(
             units::pressure(1.0, units::atm),
             volume,
-            units::celcius(25.0));
+            units::celcius(25.0),
+            initialMix);
     m_system.setGeometry(
         systemLength,
         systemWidth,
@@ -68,6 +82,16 @@ void ExhaustSystem::process(double dt) {
     airMix.p_fuel = 0;
     airMix.p_inert = 1.0 - o2;
     airMix.p_o2 = o2;
+
+    if (m_engineering) {
+        // Real air mixed with exhaust gas (treated as nitrogen)
+        const double x = m_backflowAtmosphericMixing;
+        airMix.p_o2 = x * thermo::air::x_O2;
+        airMix.p_ar = x * thermo::air::x_Ar;
+        airMix.p_co2 = x * thermo::air::x_CO2;
+        airMix.p_n2 = 1.0 - airMix.p_o2 - airMix.p_ar - airMix.p_co2;
+        airMix.p_inert = 1.0 - airMix.p_o2;
+    }
 
     m_atmosphere.reset(units::pressure(1.0, units::atm), units::celcius(25.0), airMix);
     GasSystem::FlowParameters flowParams;

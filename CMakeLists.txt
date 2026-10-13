@@ -81,6 +81,8 @@ add_library(engine-sim STATIC
     src/drivetrain_spring.cpp
     src/dynamometer.cpp
     src/engine.cpp
+    src/engine_friction.cpp
+    src/engine_metrics.cpp
     src/exhaust_system.cpp
     src/feedback_comb_filter.cpp
     src/filter.cpp
@@ -131,6 +133,8 @@ add_library(engine-sim STATIC
     include/drivetrain_spring.h
     include/dynamometer.h
     include/engine.h
+    include/engine_friction.h
+    include/engine_metrics.h
     include/exhaust_system.h
     include/feedback_comb_filter.h
     include/filter.h
@@ -237,6 +241,9 @@ if (PIRANHA_ENABLED)
     # Compiles and simulates engine scripts without a window (used by CI)
     add_executable(engine-sim-script-check tools/script_check.cpp)
     target_link_libraries(engine-sim-script-check PRIVATE engine-sim-script-interpreter)
+
+    add_executable(engine-sim-dyno tools/dyno.cpp)
+    target_link_libraries(engine-sim-dyno PRIVATE engine-sim-script-interpreter)
 endif()
 
 # ========================================================
@@ -396,7 +403,16 @@ if (ENGINE_SIM_BUILD_APP)
     install(DIRECTORY dependencies/delta-studio/engines/basic/shaders/glsl
         DESTINATION ${ENGINE_SIM_DATA_DESTINATION}/delta/shaders)
     install(FILES LICENSE README.md CHANGELOG.md DESTINATION .)
-    install(FILES docs/scripting.md DESTINATION docs)
+    install(FILES docs/scripting.md docs/engineering.md DESTINATION docs)
+
+    # Command line dynamometer (see docs/engineering.md)
+    if (TARGET engine-sim-dyno)
+        if (APPLE)
+            install(TARGETS engine-sim-dyno RUNTIME DESTINATION .)
+        else()
+            install(TARGETS engine-sim-dyno RUNTIME DESTINATION bin)
+        endif()
+    endif()
 
     if (WIN32)
         # Ship the SDL DLL (when linked dynamically) and the MSVC runtime
@@ -446,6 +462,7 @@ if (ENGINE_SIM_BUILD_TESTS)
 
     add_executable(engine-sim-test
         test/gas_system_tests.cpp
+        test/engine_model_tests.cpp
         test/function_test.cpp
         test/synthesizer_tests.cpp
         test/thermodynamics_tests.cpp

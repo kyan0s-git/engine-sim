@@ -42,6 +42,12 @@ void WankelEngine::calculateDisplacement() {
     m_displacement = displacement;
 }
 
+void WankelEngine::initializeFriction() {
+    calculateDisplacement();
+    m_frictionParameters.model = EngineFriction::Model::Legacy;
+    m_friction.initialize(m_frictionParameters, EngineFriction::Geometry());
+}
+
 Simulator *WankelEngine::createSimulator(Vehicle *vehicle, Transmission *transmission) {
     WankelEngineSimulator *simulator = new WankelEngineSimulator;
     Simulator::Parameters simulatorParams;

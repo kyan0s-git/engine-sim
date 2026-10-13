@@ -44,6 +44,12 @@ class GasSystem {
 
             // Mole fractions of each species
             thermo::Composition composition() const;
+
+            bool operator==(const Mix &b) const {
+                return p_fuel == b.p_fuel && p_inert == b.p_inert && p_o2 == b.p_o2
+                    && p_n2 == b.p_n2 && p_ar == b.p_ar && p_co2 == b.p_co2
+                    && p_h2o == b.p_h2o && p_co == b.p_co && p_h2 == b.p_h2;
+            }
             static Mix fromComposition(const thermo::Composition &c);
         };
 
@@ -114,6 +120,15 @@ class GasSystem {
             double chokedFlowRateCached);
         double loseN(double dn, double E_k_per_mol);
         double gainN(double dn, double E_k_per_mol, const Mix &mix = Mix());
+
+        // Engineering model: gains gas whose mixture properties are already
+        // known (avoids recomputing them from the mix)
+        double gainN(
+            double dn,
+            double E_k_per_mol,
+            const Mix &mix,
+            const thermo::EnergyPolynomial &energy,
+            double molarMass);
         void dissipateExcessVelocity();
 
         void updateVelocity(double dt, double beta = 1.0);
@@ -165,6 +180,7 @@ class GasSystem {
 
     protected:
         void updateComposition();
+        void mixIn(double dn, const Mix &mix);
         void updateTemperatureCache() const;
         void updateFlowConstants();
         double energyPerMol(const Mix &mix, double T) const;
@@ -180,6 +196,12 @@ class GasSystem {
         double m_molarMass = units::AirMolecularMass;
         unsigned int m_compositionVersion = 0;
         double m_flowConstantsGamma = 0;
+
+        // Properties of the last mix used as an environment in flow()
+        Mix m_environmentMix;
+        thermo::EnergyPolynomial m_environmentEnergy;
+        double m_environmentMolarMass = 0;
+        bool m_environmentValid = false;
 
         mutable double m_cacheE = -1;
         mutable double m_cacheN = -1;
@@ -296,7 +318,17 @@ inline double GasSystem::dynamicPressure(double dx, double dy) const {
 
     const double x = 1 + ((hcr - 1) / 2) * machNumber_squared;
     if (isEngineering()) {
-        return staticPressure * (std::pow(x, hcr / (hcr - 1)) - 1);
+        const double a = hcr / (hcr - 1);
+        const double u = x - 1;
+        if (u < 0.02) {
+            // (1 + u)^a - 1 to fourth order
+            const double a1 = a * (a - 1) / 2;
+            const double a2 = a1 * (a - 2) / 3;
+            const double a3 = a2 * (a - 3) / 4;
+            return staticPressure * u * (a + u * (a1 + u * (a2 + u * a3)));
+        }
+
+        return staticPressure * (std::pow(x, a) - 1);
     }
 
     double x_d;

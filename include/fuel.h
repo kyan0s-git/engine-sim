@@ -4,6 +4,7 @@
 #include "units.h"
 
 #include "function.h"
+#include "thermodynamics.h"
 
 #include <string>
 
@@ -24,6 +25,12 @@ class Fuel {
             double maxTurbulenceEffect = 2.0;
             double maxDilutionEffect = 50.0;
             Function *turbulenceToFlameSpeedRatio = nullptr;
+
+            // Engineering physics model: fuel from the built-in library
+            // (see thermo::findFuel) and the fraction of the fuel in the
+            // burned charge that is oxidized (crevice and quench losses)
+            std::string type = "gasoline";
+            double combustionEfficiency = 0.97;
         };
 
         Fuel();
@@ -49,7 +56,25 @@ class Fuel {
             double motoringPressure) const;
         virtual double laminarBurningVelocity(double molecularAfr, double T, double P) const;
 
+        // Turbulent flame speed for a turbulence intensity and laminar
+        // burning velocity
+        double turbulentFlameSpeed(double turbulence, double S_L) const;
+
         double getMolecularAfr() const { return m_molecularAfr; }
+
+        // Engineering physics model
+        const thermo::FuelDefinition &getDefinition() const { return m_definition; }
+        double getCombustionEfficiency() const { return m_combustionEfficiency; }
+        bool isKnownType() const { return m_knownType; }
+
+        // Laminar burning velocity [m/s] for the equivalence ratio `phi`,
+        // unburned gas temperature and pressure and burned gas (residual)
+        // mole fraction
+        double laminarBurningVelocityEngineering(
+            double phi,
+            double T_u,
+            double P,
+            double residualFraction) const;
 
     protected:
         std::string m_name;
@@ -64,6 +89,10 @@ class Fuel {
         double m_maxDilutionEffect;
 
         Function *m_turbulenceToFlameSpeedRatio;
+
+        thermo::FuelDefinition m_definition;
+        double m_combustionEfficiency;
+        bool m_knownType;
 };
 
 #endif /* ATG_ENGINE_FUEL_H */

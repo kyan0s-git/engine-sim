@@ -46,6 +46,10 @@ double WankelCombustionChamber::getVolume() const {
     return m_rotor->getChamberVolume(m_face, shaftAngle());
 }
 
+double WankelCombustionChamber::getSweptVolume() const {
+    return m_rotor->getFaceDisplacement();
+}
+
 double WankelCombustionChamber::pistonSpeed() const {
     // Characteristic gas velocity used by the turbulence model. The charge
     // is carried around the housing by the rotor so the speed at which the
