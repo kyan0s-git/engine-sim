@@ -106,6 +106,7 @@ add_library(engine-sim STATIC
     src/standard_valvetrain.cpp
     src/starter_motor.cpp
     src/synthesizer.cpp
+    src/thermodynamics.cpp
     src/throttle.cpp
     src/transmission.cpp
     src/utilities.cpp
@@ -155,6 +156,7 @@ add_library(engine-sim STATIC
     include/standard_valvetrain.h
     include/starter_motor.h
     include/synthesizer.h
+    include/thermodynamics.h
     include/throttle.h
     include/transmission.h
     include/units.h
@@ -446,6 +448,7 @@ if (ENGINE_SIM_BUILD_TESTS)
         test/gas_system_tests.cpp
         test/function_test.cpp
         test/synthesizer_tests.cpp
+        test/thermodynamics_tests.cpp
         test/wankel_tests.cpp
     )
 
