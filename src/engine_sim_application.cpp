@@ -93,6 +93,7 @@ namespace {
 } /* namespace */
 
 EngineSimApplication::EngineSimApplication() {
+    m_checkForUpdates = true;
     m_assetPath = "";
 
     m_geometryVertexBuffer = nullptr;
@@ -357,6 +358,7 @@ void EngineSimApplication::loadSession() {
 
         if (key == "engine" && fileExists(value)) m_engineScriptPath = value;
         else if (key == "theme" && fileExists(value)) m_themeScriptPath = value;
+        else if (key == "check_for_updates") m_checkForUpdates = (value != "0");
     }
 }
 
@@ -369,6 +371,7 @@ void EngineSimApplication::saveSession() const {
 
     file << "engine=" << m_engineScriptPath << "\n";
     file << "theme=" << m_themeScriptPath << "\n";
+    file << "check_for_updates=" << (m_checkForUpdates ? 1 : 0) << "\n";
 }
 
 void EngineSimApplication::initialize() {
@@ -389,6 +392,33 @@ void EngineSimApplication::initialize() {
     // Pick the scripts to start with: command line, then the previous
     // session, then the legacy main.mr entry point
     loadSession();
+
+    // Look for a newer release in the background (disabled with
+    // --no-update-check, ENGINE_SIM_NO_UPDATE_CHECK=1 or check_for_updates=0
+    // in session.ini)
+    {
+        Updater::Parameters updaterParams;
+        updaterParams.currentVersion = s_buildVersion;
+        updaterParams.userDataPath = m_userDataPath;
+
+        char *basePath = SDL_GetBasePath();
+        if (basePath != nullptr) {
+            updaterParams.executablePath = basePath;
+            SDL_free(basePath);
+        }
+
+        const char *noUpdateCheck = std::getenv("ENGINE_SIM_NO_UPDATE_CHECK");
+        const bool enabled =
+            m_checkForUpdates
+            && m_startupOptions.checkForUpdates
+            && (noUpdateCheck == nullptr || std::string(noUpdateCheck) == "0");
+
+        m_updater.initialize(updaterParams);
+        m_updater.setEnabled(enabled);
+        if (enabled) {
+            m_updater.checkAsync();
+        }
+    }
 
     if (!m_startupOptions.engineScript.empty()) {
         m_engineScriptPath = normalizePath(fs::absolute(m_startupOptions.engineScript));
@@ -642,6 +672,13 @@ void EngineSimApplication::run() {
             if (m_engine.ProcessKeyDown(ysKey::Code::Down)) m_console->scroll(1);
         }
 
+        if (m_engine.ProcessKeyDown(ysKey::Code::F8)) {
+            processUpdateInput();
+            if (m_updater.getState() == Updater::State::ReadyToRestart && m_updater.startRestart()) {
+                break;
+            }
+        }
+
         if (m_engine.ProcessKeyDown(ysKey::Code::Tab)) {
             m_screen++;
             if (m_screen > 2) m_screen = 0;
@@ -704,6 +741,38 @@ void EngineSimApplication::run() {
     }
 
     saveSession();
+}
+
+void EngineSimApplication::processUpdateInput() {
+    switch (m_updater.getState()) {
+    case Updater::State::Available:
+        if (m_updater.canInstall()) {
+            m_updater.installAsync();
+            m_infoCluster->setLogMessage("Downloading update " + m_updater.getRelease().version);
+        }
+        else {
+            // Development builds and installations that can't be written to
+            // are updated by hand
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+            SDL_OpenURL(m_updater.getRelease().pageUrl.c_str());
+#endif
+            m_infoCluster->setLogMessage("Release page: " + m_updater.getRelease().pageUrl);
+        }
+        break;
+    case Updater::State::ReadyToRestart:
+        m_infoCluster->setLogMessage("Restarting to install the update");
+        break;
+    case Updater::State::Failed:
+    case Updater::State::UpToDate:
+    case Updater::State::Idle:
+        m_updater.checkAsync();
+        break;
+    case Updater::State::Disabled:
+        m_infoCluster->setLogMessage("Update check is disabled");
+        break;
+    default:
+        break;
+    }
 }
 
 void EngineSimApplication::destroy() {

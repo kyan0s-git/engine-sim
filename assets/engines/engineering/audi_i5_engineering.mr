@@ -79,7 +79,7 @@ public node audi_i5_2_2L_engineering {
     wires wires()
 
     engine engine(
-        name: "Audi 2.2 inline 5 [engineering]",
+        name: "Audi 2.2 I5 [eng.]",
         starter_torque: 200 * units.lb_ft,
         redline: 7500 * units.rpm,
 

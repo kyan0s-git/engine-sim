@@ -148,9 +148,20 @@ These `engine` inputs trade accuracy for speed and set the initial audio mix (wh
 | `simulation_frequency` | 10000 | Physics steps per second. Fast-revving or many-cylinder engines need more |
 | `fluid_simulation_steps` | 8 | Gas flow substeps per physics step |
 | `max_sle_solver_steps` | 128 | Iterations of the constraint solver |
-| `heat_transfer_coefficient` | 100 | Heat exchange between the charge and the cylinder walls (W/m²K) |
-| `block_temperature` | `celsius(90)` | Cylinder wall temperature |
+| `heat_transfer_coefficient` | 100 | Heat exchange between the charge and the cylinder walls (W/m²K), legacy model |
+| `block_temperature` | `celsius(90)` | Cylinder wall temperature, legacy model |
 | `hf_gain`, `noise`, `jitter`, `convolution` | | Initial audio settings |
+
+## Engineering physics model
+
+`physics_model: "engineering"` on `engine` (or `wankel_engine`) switches to
+real air and fuel chemistry, variable gas properties, Woschni heat transfer
+and a component friction model, and makes the engine's figures meaningful
+for engineering work. It adds inputs to `engine` (`wall_temperature`,
+`friction_model`, `valvetrain_type`, ...), `fuel` (`type`,
+`combustion_efficiency`) and `intake` (`lambda`, `evaporative_cooling`).
+See [engineering.md](engineering.md) for the inputs, the models and the
+`engine-sim-dyno` tool.
 
 ## Vehicle and transmission
 

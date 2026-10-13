@@ -34,11 +34,11 @@ void InfoCluster::render() {
     const Bounds logoBounds = grid.get(m_bounds, 0, 0, 1, 2);
     drawFrame(logoBounds, 1.0f, m_app->getForegroundColor(), m_app->getBackgroundColor());
 
-    drawModel(
-        m_app->getAssetManager()->GetModelAsset("Logo"),
-        m_app->getForegroundColor(),
-        logoBounds.getPosition(Bounds::center),
-        Point(logoBounds.height(), logoBounds.height()) * 0.75f);
+    drawCenteredText(
+        "ES",
+        logoBounds.inset(5.0f),
+        logoBounds.height() * 0.5f,
+        Bounds::center);
 
     const Bounds titleBounds = grid.get(m_bounds, 1, 0, 5, 2);
     drawFrame(titleBounds, 1.0f, m_app->getForegroundColor(), m_app->getBackgroundColor());
@@ -52,8 +52,19 @@ void InfoCluster::render() {
         42.0f,
         Bounds::bl,
         Bounds::bl);
+    // Update notifications; otherwise the project's address (failures are
+    // reported in the console)
+    const Updater::State updateState = m_app->getUpdater().getState();
+    const bool showUpdate =
+        updateState == Updater::State::Available
+        || updateState == Updater::State::Downloading
+        || updateState == Updater::State::ReadyToRestart;
+    const std::string status = showUpdate
+        ? m_app->getUpdater().getStatusText()
+        : "GITHUB.COM/KYAN0S-GIT/ENGINE-SIM";
+
     drawAlignedText(
-        "YOUTUBE/ANGETHEGREAT",
+        status,
         titleSplit.get(titleBounds, 0, 1).inset(10.0f).move({ 0.0f, 5.0f }),
         24.0f,
         Bounds::tl,

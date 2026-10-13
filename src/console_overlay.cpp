@@ -74,11 +74,20 @@ void ConsoleOverlay::render() {
             : rel.generic_string();
     };
 
+    const Updater &updater = m_app->getUpdater();
+    std::string updateStatus = updater.getStatusText();
+    if (updater.getState() == Updater::State::Failed) {
+        updateStatus += ": " + updater.getError();
+    }
+
     std::vector<std::string> header = {
         "ENGINE: " + relative(m_app->getEngineScriptPath()),
         "THEME:  " + relative(m_app->getThemeScriptPath()),
-        "[F5] CLOSE   [ENTER] RELOAD SCRIPTS   [UP]/[DOWN] SCROLL",
+        "VERSION: " + EngineSimApplication::getBuildVersion()
+            + (updateStatus.empty() ? "" : "   " + updateStatus),
+        "[F5] CLOSE   [ENTER] RELOAD SCRIPTS   [UP]/[DOWN] SCROLL   [F8] UPDATE",
         "[PGUP]/[PGDN] PREVIOUS/NEXT ENGINE   [[]/[]] PREVIOUS/NEXT THEME",
+        "ORIGINALLY CREATED BY ANGE YAGHI (MIT LICENSE)",
         ""
     };
 

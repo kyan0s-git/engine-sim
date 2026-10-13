@@ -23,25 +23,38 @@ notes behind it are in [`research_notes/`](research_notes/).
 4. **Real time stays the constraint.** Everything except 1-D pipes costs a
    few polynomial or `pow` evaluations per cylinder step.
 
-## Milestone A — thermodynamic core, heat transfer, friction and measurement (in progress)
+## Milestone A — thermodynamic core, heat transfer, friction and measurement (done)
 
 | Item | Report phase | Status |
 | --- | --- | --- |
-| Per-cycle engine metrics: IMEP (gross/net), PMEP, BMEP, FMEP, indicated/brake/mechanical efficiency, BSFC, trapped air and fuel mass, VE (dry air, ambient reference), AFR/λ, CA10/50/90, peak pressure and its angle | 0 | |
-| Headless dyno sweep producing CSV (`engine-sim-dyno`) with SAE J1349 correction column | 0 | |
-| Deterministic random numbers (seeded per chamber) | 0 | |
-| `physics_model` engine switch threaded through intake, exhaust and cylinders | – | |
-| Element-conserving `react()` (O₂ is no longer consumed without fuel) | 1 | |
-| Equivalence ratio passed to the flame speed correlation (φ instead of λ) | 1 | |
-| Enthalpy-carrying flows (blowdown cools, filling heats) | 2 | |
-| Species tracking (fuel, O₂, N₂, Ar, CO₂, H₂O, CO, H₂) with NASA-7 properties: variable c_p, γ and molar mass | 2 | |
-| Real air (20.95 % O₂ + Ar), metered λ, mass-based fuel definitions (formula, LHV, AFR_st) and a fuel library | 2 | |
-| Complete-combustion stoichiometry with water–gas shift for rich mixtures; heat release from LHV minus unburned CO/H₂; η_HC instead of the random burning efficiency | 2 | |
-| Laminar flame speed updated every step from the unburned state | 4 (early) | |
-| Woschni in-cylinder heat transfer with phase constants and motored pressure from IVC | 3 | |
-| Patton–Nitschke–Heywood friction (rubbing + auxiliary; pumping is simulated) with Chen–Flynn and legacy options | 3 | |
-| Verification tests: blowdown, filling, isentropic compression, choked flow, constant-volume combustion temperature, friction and Woschni magnitudes | – | |
-| Engineering reference engine and documentation | 8 (early) | |
+| Per-cycle engine metrics: IMEP (gross/net), PMEP, BMEP, FMEP, indicated/brake/mechanical efficiency, BSFC, trapped air and fuel mass, VE (dry air, ambient reference), AFR/λ, CA10/50/90, peak pressure and its angle | 0 | done |
+| Headless dyno sweep producing CSV (`engine-sim-dyno`) with SAE J1349 correction column | 0 | done |
+| Deterministic random numbers (seeded per chamber) | 0 | done |
+| `physics_model` engine switch threaded through intake, exhaust and cylinders | – | done |
+| Element-conserving `react()` (O₂ is no longer consumed without fuel) | 1 | done |
+| Equivalence ratio passed to the flame speed correlation (φ instead of λ) | 1 | done (engineering model) |
+| Enthalpy-carrying flows (blowdown cools, filling heats) | 2 | done |
+| Species tracking (fuel, O₂, N₂, Ar, CO₂, H₂O, CO, H₂) with NASA-7 properties: variable c_p, γ and molar mass | 2 | done |
+| Real air (20.95 % O₂ + Ar), metered λ, mass-based fuel definitions (formula, LHV, AFR_st) and a fuel library | 2 | done |
+| Complete-combustion stoichiometry with water–gas shift for rich mixtures; heat release from LHV minus unburned CO/H₂; η_HC instead of the random burning efficiency | 2 | done |
+| Laminar flame speed updated every step from the unburned state | 4 (early) | done, plus quasi-dimensional entrainment (ρᵤ·A_f·S_T) |
+| Woschni in-cylinder heat transfer with phase constants and motored pressure from IVC | 3 | done |
+| Patton–Nitschke–Heywood friction (rubbing + auxiliary; pumping is simulated) with Chen–Flynn and legacy options | 3 | done |
+| Verification tests: blowdown, filling, isentropic compression, choked flow, constant-volume combustion temperature, friction and Woschni magnitudes | – | done (Woschni through the reference engine: 13–20 % of the fuel energy to the walls) |
+| Engineering reference engine and documentation | 8 (early) | done (`docs/engineering.md`) |
+
+Findings from Milestone A that feed the next milestones:
+
+* The gas work (p·dV per step) and the force on the pistons are integrated
+  at different points of a time step. At 10 kHz this loses up to about
+  1 bar of FMEP at high speed (0.1–0.6 bar at 20 kHz). A work-consistent
+  coupling belongs to Milestone D.
+* Engines tuned for the legacy model rely on its very rich idle circuit;
+  under the engineering model, engines with large valve overlap need more
+  idle air (`docs/engineering.md`, "Converting an engine").
+* The engineering model costs about 1.5× the legacy model per step.
+* Dissociation is not modelled; peak temperatures are 100–300 K high at
+  stoichiometric conditions.
 
 ## Milestone B — combustion model
 

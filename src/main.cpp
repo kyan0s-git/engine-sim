@@ -18,6 +18,7 @@ namespace {
             "  --data <dir>        Directory containing the assets/ and es/ folders\n"
             "  --fullscreen        Start in fullscreen mode\n"
             "  --windowed          Start in windowed mode\n"
+            "  --no-update-check   Don't check for new releases\n"
             "  --version           Print the version and exit\n"
             "  --help              Show this message\n",
             program);
@@ -34,7 +35,10 @@ namespace {
                 return false;
             }
             else if (arg == "--version" || arg == "-v") {
-                std::printf("Engine Simulator %s\n", EngineSimApplication::getBuildVersion().c_str());
+                std::printf(
+                    "Engine Simulator %s\n"
+                    "Based on Engine Simulator by Ange Yaghi (MIT license)\n",
+                    EngineSimApplication::getBuildVersion().c_str());
                 return false;
             }
             else if ((arg == "--engine" || arg == "-e") && hasValue) {
@@ -51,6 +55,9 @@ namespace {
             }
             else if (arg == "--windowed") {
                 options->fullscreen = EngineSimApplication::StartupOptions::Toggle::Off;
+            }
+            else if (arg == "--no-update-check") {
+                options->checkForUpdates = false;
             }
             else if (arg.rfind("-psn_", 0) == 0) {
                 // macOS Finder passes a process serial number; ignore it

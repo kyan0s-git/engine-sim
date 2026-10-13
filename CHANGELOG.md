@@ -22,7 +22,30 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   `--windowed`, `--version`); the data folder is found automatically and
   per-user files are stored in the platform's application data folder.
 
+### Engineering physics model
+- New `physics_model: "engineering"` engine setting (the original model
+  remains the default): real air, eight species with NASA polynomial
+  properties, enthalpy-carrying flows, metered lambda, a fuel library
+  (gasoline, iso-octane, n-heptane, ethanol, methanol, E10, E85, methane,
+  propane, hydrogen) with evaporative charge cooling, heat release from
+  formation enthalpies with water-gas shift for rich mixtures, a
+  quasi-dimensional entrainment flame with the laminar flame speed updated
+  every step, Woschni heat transfer and Patton-Nitschke-Heywood or
+  Chen-Flynn friction. See `docs/engineering.md`.
+- Per-cycle engine metrics: gross/net IMEP, PMEP, BMEP, FMEP, mechanical,
+  indicated and brake efficiency, ISFC/BSFC, volumetric efficiency, AFR and
+  lambda, spark advance, CA10/50/90, peak pressure and temperature, wall
+  heat loss.
+- `engine-sim-dyno`: headless dynamometer sweep that writes the metrics as
+  CSV, including SAE J1349 corrected torque and power. Included in the
+  release packages.
+- Engineering reference engine (`engines/engineering/audi_i5_engineering.mr`).
+- Research notes, report and roadmap in `research/`.
+
 ### New features
+- **In-app updates**: the application checks GitHub for new releases at
+  startup; F8 downloads and installs the update and restarts. Disable with
+  `--no-update-check`.
 - **Rotary (Wankel) engines** with `wankel_engine`, `wankel_rotor`,
   `wankel_peripheral_port` and `add_rotor`, using the same script names as
   the official 0.1.14a release. Includes a two-rotor demo engine.
@@ -51,6 +74,10 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   random number generator.
 
 ### Fixes
+- The legacy combustion consumed oxygen without fuel once the cylinder ran
+  out of fuel.
+- Random cycle variation used the C library's global generator; each
+  cylinder now has its own seeded generator.
 - Engines started out with their intake and cylinders full of inert gas;
   large engines (2JZ, Audi I5, 9-cylinder radial, Merlin V12 and others)
   failed to start with a normal crank. Every bundled engine now starts.
@@ -76,6 +103,9 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
 - The Merlin V12's starter couldn't turn the engine over.
 
 ### Removed
+- The original author's YouTube handle and logo from the info panel (the
+  original author is credited in the README, the console and `--version`),
+  and the original project's Patreon supporter list.
 - The unused SDL2_image dependency, the Win32-only backends and demos of the
   vendored libraries, and an outdated duplicate of the part library
   (`assets/part-library`).

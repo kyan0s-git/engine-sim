@@ -23,6 +23,7 @@
 #include "console_overlay.h"
 #include "application_settings.h"
 #include "transmission.h"
+#include "updater.h"
 
 #include "delta.h"
 #include "dtv.h"
@@ -47,6 +48,7 @@ class EngineSimApplication {
             std::string themeScript;
             std::string dataRoot;
             Toggle fullscreen = Toggle::Default;
+            bool checkForUpdates = true;
         };
 
     public:
@@ -78,6 +80,7 @@ class EngineSimApplication {
         const std::string &getEngineScriptPath() const { return m_engineScriptPath; }
         const std::string &getThemeScriptPath() const { return m_themeScriptPath; }
         const std::string &getScriptLog() const { return m_scriptLog; }
+        const Updater &getUpdater() const { return m_updater; }
         bool hasScriptErrors() const { return m_scriptErrors; }
 
         const std::string &getDataRoot() const { return m_dataRoot; }
@@ -183,6 +186,11 @@ class EngineSimApplication {
         // Scripts
         StartupOptions m_startupOptions;
         std::string m_startupError;
+
+        Updater m_updater;
+        bool m_checkForUpdates;
+
+        void processUpdateInput();
         std::string m_engineScriptPath;
         std::string m_themeScriptPath;
         std::string m_scriptLog;
