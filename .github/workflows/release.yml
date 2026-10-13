@@ -2,12 +2,22 @@ name: Release
 
 # Builds self-contained packages for Windows, Linux and macOS and publishes
 # them as a GitHub release. Triggered by pushing a tag such as `v0.2.0`, or
-# manually from the Actions tab (which produces artifacts but no release).
+# manually from the Actions tab: without a release tag that only produces
+# artifacts; with one (e.g. `v0.2.0`) it publishes a release and creates the
+# tag on the commit the workflow ran on.
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag to release (e.g. v0.2.0); empty = build artifacts only'
+        required: false
+        default: ''
+
+env:
+  RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release_tag }}
 
 permissions:
   contents: write
@@ -35,8 +45,15 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          if [[ -n "${RELEASE_TAG}" ]]; then
+            VERSION="${RELEASE_TAG#v}"
+            # The tag must match the version the application reports
+            PROJECT_VERSION=$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | cut -d' ' -f2)
+            if [[ "${VERSION%%-*}" != "${PROJECT_VERSION}" ]]; then
+              echo "Tag ${RELEASE_TAG} doesn't match the project version ${PROJECT_VERSION}"
+              exit 1
+            fi
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           else
             echo "version=$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | cut -d' ' -f2)-dev" >> "$GITHUB_OUTPUT"
           fi
@@ -148,7 +165,7 @@ jobs:
   release:
     name: Publish release
     needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -160,14 +177,14 @@ jobs:
 
       - name: Extract release notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           # Use the matching section of the changelog as the release notes
           awk -v ver="$VERSION" '
             /^## / { if (found) exit; if (index($0, "[" ver "]") || index($0, " " ver)) { found=1; next } }
             found { print }
           ' CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then
-            echo "Engine Simulator ${GITHUB_REF_NAME}" > release-notes.md
+            echo "Engine Simulator ${RELEASE_TAG}" > release-notes.md
           fi
           cat release-notes.md
 
@@ -176,8 +193,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PRERELEASE=""
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then PRERELEASE="--prerelease"; fi
-          gh release create "${GITHUB_REF_NAME}" artifacts/* \
-            --title "Engine Simulator ${GITHUB_REF_NAME}" \
+          if [[ "${RELEASE_TAG}" == *-* ]]; then PRERELEASE="--prerelease"; fi
+          # Creates the tag on this commit if it doesn't exist yet
+          gh release create "${RELEASE_TAG}" artifacts/* \
+            --target "${GITHUB_SHA}" \
+            --title "Engine Simulator ${RELEASE_TAG}" \
             --notes-file release-notes.md \
             $PRERELEASE

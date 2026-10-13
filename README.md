@@ -176,7 +176,7 @@ ctest --test-dir build --output-on-failure
 Pushing a tag such as `v0.2.0` runs the [Release workflow](.github/workflows/release.yml), which builds the Windows, Linux and macOS packages and publishes a GitHub release using the matching section of `CHANGELOG.md` as release notes. Tags containing a hyphen (e.g. `v0.3.0-beta1`) are published as pre-releases. To cut a release:
 
 1. Update `VERSION` in the `project()` call of `CMakeLists.txt` and add a section to `CHANGELOG.md`
-2. Commit, then `git tag v<version>` and `git push origin v<version>`
+2. Commit, then `git tag v<version>` and `git push origin v<version>`. Alternatively run the Release workflow from the Actions tab with the tag (e.g. `v0.3.0`) as its input; it creates the tag on the commit it ran on.
 
 Every push is also built and tested on all three platforms by the [Build workflow](.github/workflows/build.yml).
 
