@@ -4,6 +4,47 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
+## [0.3.0] - 2026-10-14
+
+### Installers
+- Windows setup program (per-user install, Start menu and desktop
+  shortcuts, uninstaller), macOS disk image, Linux AppImage and Debian
+  package, alongside the portable archives.
+- Application icon on all platforms.
+- The AppImage updates itself; the Windows installer's entry in the list of
+  installed programs follows in-app updates.
+- `engine-sim-dyno` finds the installation's data without `--data`.
+
+### New user interface
+- Rebuilt with Dear ImGui and ImPlot: menu bar, controls panel,
+  instruments panel with the engineering outputs of the last cycle, and an
+  analysis panel with cylinder pressure and valve lift against crank angle,
+  p-V diagram, flows, dyno curve, history, audio and performance plots.
+  Panels can be resized and Tab cycles the layouts.
+- Settings page (File > Settings, Ctrl+,) stored in `settings.ini`:
+  fullscreen, vertical sync, interface scale and theme (dark, light or the
+  engine theme's colors), units, master volume, muting in the background,
+  simulation frequency and update checks.
+- Engine designer: describe an engine by its parameters (layout, cylinder
+  count, bore, stroke, rod length, compression ratio, cams, intake and
+  exhaust, ignition curve, fuel, mixture, vehicle mass) and run it. Designs
+  are saved as engine scripts and can be reopened in the designer.
+- Tuning window to change the timing, rev limiter, mixture, combustion
+  efficiency, wall temperature, heat transfer, friction, sound and
+  simulation frequency of the running engine.
+- Console window for script errors and messages; menus to pick engines and
+  themes.
+
+### Fixes
+- Gauge needles swung around with the engine stopped: the needle spring was
+  integrated explicitly and became unstable at low or uneven frame rates.
+  Needles and smoothed values now use an exact, frame-rate independent
+  response.
+- A frame without simulation steps divided the intake flow rate by zero,
+  sending the flow gauges to infinity.
+- Status messages are no longer repeated every frame while an audio or
+  simulation key is held.
+
 ## [0.2.0] - 2026-10-13
 
 ### Platforms and packaging

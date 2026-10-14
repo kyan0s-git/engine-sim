@@ -1,5 +1,5 @@
 # Engine Simulator
-![Engine Simulator screenshot](docs/public/screenshots/screenshot_v01.png?raw=true)
+![Engine Simulator screenshot](docs/public/screenshots/screenshot_v03.png?raw=true)
 
 A real-time internal combustion engine simulator that produces engine audio and simulates how an engine responds, now with an **engineering physics model** for power curves, efficiency and fuel consumption.
 
@@ -13,15 +13,32 @@ Engines can select the **engineering** model (`physics_model: "engineering"`) in
 
 ## Download
 
-Prebuilt packages are attached to each [release](https://github.com/kyan0s-git/engine-sim/releases):
+Installers are attached to each [release](https://github.com/kyan0s-git/engine-sim/releases):
 
-| Platform | Package | How to run |
+| Platform | Installer | Installs to |
 | :-- | :-- | :-- |
-| Windows (x64) | `engine-sim-<version>-windows-x64.zip` | Extract and run `bin/engine-sim-app.exe` |
-| Linux (x64) | `engine-sim-<version>-linux-x64.tar.gz` | Extract and run `bin/engine-sim-app` (or `engine-sim.desktop`) |
-| macOS (Apple Silicon and Intel) | `engine-sim-<version>-macos-universal.zip` | Extract and open `Engine Simulator.app` |
+| Windows 10/11 (x64) | `engine-sim-<version>-windows-x64-setup.exe` | `%LOCALAPPDATA%\Programs\Engine Simulator` with Start menu (and optional desktop) shortcuts and an uninstaller. No administrator rights needed. |
+| macOS 11+ (Apple Silicon and Intel) | `engine-sim-<version>-macos-universal.dmg` | Drag *Engine Simulator* to *Applications* |
+| Linux (x86-64), any distribution | `engine-sim-<version>-linux-x86_64.AppImage` | Nothing to install: make it executable (`chmod +x`) and run it |
+| Debian, Ubuntu and derivatives | `engine-sim_<version>_amd64.deb` | `/opt/engine-sim`, with an application menu entry and the `engine-sim` and `engine-sim-dyno` commands |
 
-The packages are self-contained. A GPU driver supporting OpenGL 4.1 or newer is required. On macOS the app is not notarized, so the first time you open it right-click it and choose *Open*. The Linux package is built on Ubuntu 22.04 and works on distributions with glibc 2.35 or newer; it supports both X11 and Wayland.
+Portable archives (`-windows-x64.zip`, `-linux-x64.tar.gz`, `-macos-universal.zip`) that run without installing are attached as well; the in-app updater uses them.
+
+A GPU driver supporting OpenGL 4.1 or newer is required. The installers aren't signed by a paid certificate: on Windows, SmartScreen may ask for confirmation (*More info* > *Run anyway*); on macOS, right-click the app and choose *Open* the first time. The Linux packages are built on Ubuntu 22.04 and work on distributions with glibc 2.35 or newer, on both X11 and Wayland (the AppImage needs FUSE, which most desktop distributions include).
+
+## User interface
+
+![Engine designer](docs/public/screenshots/designer_v03.png?raw=true)
+
+- **Controls** (left): ignition, starter, throttle, gears, clutch, brake, dynamometer and slow motion. The keyboard shortcuts below work as well.
+- **Instruments** (right): tachometer, speedometer, manifold pressure and air flow, and the engineering outputs of the last complete cycle (torque, power, mean effective pressures, efficiencies, BSFC, burn angles, peak pressure and temperature).
+- **Analysis** (bottom): cylinder pressure and valve lift against crank angle, the p-V diagram, intake and exhaust flows, the dyno curve recorded while the dynamometer runs, speed/torque/manifold pressure history, the audio output and simulation performance.
+- **Engine designer** (*File* > *Engine designer*): build an engine from its parameters (inline, V or flat layout, cylinder count, bore, stroke, rod length, compression ratio, cams, intake and exhaust, ignition curve, fuel and mixture) and run it. Designs are saved as ordinary engine scripts in the user data folder (`assets/engines/custom`) and can be reopened in the designer or edited by hand.
+- **Tuning** (*Simulation* > *Tuning*): change the ignition timing, rev limiter, mixture, combustion efficiency, wall temperature, heat transfer, friction, sound and simulation frequency of the running engine.
+- **Settings** (*File* > *Settings*, Ctrl+,): fullscreen, vertical sync, interface scale and theme, units, master volume, muting in the background, simulation frequency and update checks.
+- **Console** (F5): script errors and messages.
+
+Panels can be resized by dragging their inner edges, and Tab cycles between the full layout, the engine with its instruments, and the engine alone.
 
 ## Controls
 
@@ -53,14 +70,15 @@ The packages are self-contained. A GPU driver supporting OpenGL 4.1 or newer is 
 | Enter | Reload the current scripts |
 | F5 | Show the console (loaded scripts, script errors, version and update status) |
 | F8 | Install an available update / restart into it |
-| Tab | Change screen layout |
+| Tab | Cycle the panel layout |
+| Ctrl + , | Settings |
 | F | Toggle fullscreen |
 | Escape | Exit |
 
 The last engine and theme you selected are remembered between sessions.
 
 ### Using the RPM hold
-The RPM hold holds the engine at a specific speed and measures its power and torque there. Press `H` to enable the hold, then **enable the dyno** with `D` for the hold to take effect. Hold `G` and scroll to change the hold speed, which is shown on the `DYNO. SPEED` gauge.
+The RPM hold holds the engine at a specific speed and measures its power and torque there. Press `H` to enable the hold, then **enable the dyno** with `D` for the hold to take effect. Hold `G` and scroll (or use the slider in the controls panel) to change the hold speed.
 
 ## Command line
 
@@ -80,7 +98,7 @@ The data directory is found automatically next to the executable (or inside the 
 
 ## Updates
 
-At startup the application asks GitHub whether a newer release exists (it sends no other information). When one does, the info panel shows it; press **F8** to download and install it, and F8 again to restart into the new version. Installations that can't be updated in place (development builds or read-only folders) open the release page instead. The check is turned off with `--no-update-check`, the environment variable `ENGINE_SIM_NO_UPDATE_CHECK=1` or `check_for_updates=0` in `session.ini`. Updating needs `curl`, which comes with Windows 10 and newer, macOS and most Linux distributions.
+At startup the application asks GitHub whether a newer release exists (it sends no other information). When one does, the menu bar shows it; click it or press **F8** to download and install it, and again to restart into the new version. Installations from the Windows installer, the macOS disk image, the AppImage and the portable archives update themselves; the Debian package, development builds and read-only folders open the release page instead. The startup check is turned off in *Settings* > *Updates*, with `--no-update-check` or with the environment variable `ENGINE_SIM_NO_UPDATE_CHECK=1` (which also disables manual checks). Updating needs `curl`, which comes with Windows 10 and newer, macOS and most Linux distributions.
 
 ## Files and folders
 
@@ -90,7 +108,7 @@ At startup the application asks GitHub whether a newer release exists (it sends 
 | `assets/engines/` | Bundled engines (piston and rotary) |
 | `assets/themes/` | Color and unit themes |
 | `es/` | The scripting library (`engine_sim.mr`) and the part library |
-| User data folder | `session.ini` (last engine and theme, update check setting), `error_log.log` and downloaded updates (`updates/`). On Windows `%APPDATA%\EngineSimulator\engine-sim`, on Linux `~/.local/share/EngineSimulator/engine-sim`, on macOS `~/Library/Application Support/EngineSimulator/engine-sim` |
+| User data folder | `settings.ini` (settings page), `session.ini` (last engine and theme), `layout.ini` (window positions), `error_log.log`, engines from the designer (`assets/engines/custom/`) and downloaded updates (`updates/`). On Windows `%APPDATA%\EngineSimulator\engine-sim`, on Linux `~/.local/share/EngineSimulator/engine-sim`, on macOS `~/Library/Application Support/EngineSimulator/engine-sim` |
 
 Scripts placed in `assets/engines` or `assets/themes` inside the user data folder also show up when cycling engines and themes, and `import` statements search that `assets` folder too.
 
@@ -173,7 +191,7 @@ ctest --test-dir build --output-on-failure
 
 ## Releases
 
-Pushing a tag such as `v0.2.0` runs the [Release workflow](.github/workflows/release.yml), which builds the Windows, Linux and macOS packages and publishes a GitHub release using the matching section of `CHANGELOG.md` as release notes. Tags containing a hyphen (e.g. `v0.3.0-beta1`) are published as pre-releases. To cut a release:
+Pushing a tag such as `v0.3.0` runs the [Release workflow](.github/workflows/release.yml), which builds the installers and portable packages for Windows, Linux and macOS (the scripts are in [packaging/](packaging/)) and publishes a GitHub release using the matching section of `CHANGELOG.md` as release notes. Tags containing a hyphen (e.g. `v0.3.0-beta1`) are published as pre-releases. To cut a release:
 
 1. Update `VERSION` in the `project()` call of `CMakeLists.txt` and add a section to `CHANGELOG.md`
 2. Commit, then `git tag v<version>` and `git push origin v<version>`. Alternatively run the Release workflow from the Actions tab with the tag (e.g. `v0.3.0`) as its input; it creates the tag on the commit it ran on.
@@ -182,4 +200,4 @@ Every push is also built and tested on all three platforms by the [Build workflo
 
 ## Credits
 
-Engine Simulator was originally created by Ange Yaghi and released under the MIT license; this project continues that open source release. The original project was made possible by its Patreon supporters. The script library additions from the Community Edition are the work of its contributors. Third party components and their licenses are listed in [dependencies/README.md](dependencies/README.md).
+Engine Simulator was originally created by Ange Yaghi and released under the MIT license; this project continues that open source release. The original project was made possible by its Patreon supporters. The script library additions from the Community Edition are the work of its contributors. Third party components and their licenses are listed in [dependencies/README.md](dependencies/README.md); the interface font is Roboto (Apache License 2.0, see `assets/fonts`).

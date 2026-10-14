@@ -190,11 +190,29 @@ namespace {
         }
     };
 
+    // The current directory if it holds the data files, otherwise the
+    // installation the executable belongs to (<root>/bin/engine-sim-dyno)
+    std::string defaultDataRoot(const char *argv0) {
+        std::error_code ec;
+        const fs::path cwd = fs::current_path(ec);
+        if (fs::is_directory(cwd / "es", ec)) return cwd.string();
+
+        fs::path exe = fs::canonical("/proc/self/exe", ec);
+        if (ec) exe = fs::weakly_canonical(fs::absolute(argv0, ec), ec);
+
+        for (fs::path dir = exe.parent_path(); !dir.empty() && dir != dir.root_path(); dir = dir.parent_path()) {
+            if (fs::is_directory(dir / "es", ec) && fs::is_directory(dir / "assets", ec)) return dir.string();
+            if (fs::is_directory(dir / "Resources" / "es", ec)) return (dir / "Resources").string();
+        }
+
+        return cwd.string();
+    }
+
 } /* namespace */
 
 int main(int argc, char *argv[]) {
     Options options;
-    options.dataRoot = fs::current_path().string();
+    options.dataRoot = defaultDataRoot(argv[0]);
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];

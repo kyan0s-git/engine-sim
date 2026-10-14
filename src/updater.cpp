@@ -147,7 +147,21 @@ Updater::~Updater() {
 
 void Updater::initialize(const Parameters &params) {
     m_params = params;
+    m_appImage = false;
     m_installRoot = findInstallRoot();
+
+#if !defined(_WIN32) && !defined(__APPLE__)
+    // An AppImage is updated by replacing the file
+    std::error_code ec;
+    const fs::path appImage(params.appImagePath);
+    if (!params.appImagePath.empty()
+        && fs::is_regular_file(appImage, ec)
+        && isWritableDirectory(appImage.parent_path()))
+    {
+        m_installRoot = appImage.string();
+        m_appImage = true;
+    }
+#endif
 }
 
 void Updater::setEnabled(bool enabled) {
@@ -290,6 +304,10 @@ std::string Updater::platformAssetSuffix() {
 }
 
 bool Updater::parseRelease(const std::string &json, Release *release) {
+    return parseRelease(json, release, platformAssetSuffix());
+}
+
+bool Updater::parseRelease(const std::string &json, Release *release, const std::string &suffix) {
     std::string tag;
     if (findJsonString(json, "tag_name", 0, &tag) == std::string::npos) {
         return false;
@@ -299,7 +317,6 @@ bool Updater::parseRelease(const std::string &json, Release *release) {
     release->version = (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) ? tag.substr(1) : tag;
     findJsonString(json, "html_url", 0, &release->pageUrl);
 
-    const std::string suffix = platformAssetSuffix();
     size_t pos = 0;
     std::string url;
     while ((pos = findJsonString(json, "browser_download_url", pos, &url)) != std::string::npos) {
@@ -351,7 +368,7 @@ void Updater::check() {
     }
 
     Release release;
-    if (!parseRelease(output, &release)) {
+    if (!parseRelease(output, &release, m_appImage ? appImageAssetSuffix() : platformAssetSuffix())) {
         fail("Unexpected response from GitHub");
         return;
     }
@@ -390,6 +407,26 @@ void Updater::install() {
         + " -o " + quote(archive.string()) + " " + quote(release.assetUrl);
     if (runCommand(download, &output) != 0) {
         fail("Download failed: " + output.substr(0, 200));
+        return;
+    }
+
+    if (m_appImage) {
+        // The download is the new application
+        fs::permissions(archive,
+            fs::perms::owner_all | fs::perms::group_read | fs::perms::group_exec
+                | fs::perms::others_read | fs::perms::others_exec,
+            ec);
+        if (ec || fs::file_size(archive, ec) < 1024 * 1024) {
+            fail("The downloaded AppImage is incomplete");
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_lock);
+            m_stagedPath = archive.string();
+        }
+
+        m_state = State::ReadyToRestart;
         return;
     }
 
@@ -472,6 +509,11 @@ bool Updater::startRestart() {
             << "if not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\n"
             << "robocopy " << quote(staged) << " " << quote(m_installRoot)
             << " /E /NFL /NDL /NJH /NJS /NP /R:5 /W:1 >NUL\r\n"
+            // Installed with the installer: keep the version shown in the
+            // list of installed programs current
+            << "if exist " << quote((fs::path(m_installRoot) / "uninstall.exe").string())
+            << " reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\EngineSimulator\""
+            << " /v DisplayVersion /d " << quote(getRelease().version) << " /f >NUL 2>&1\r\n"
             << "start \"\" " << quote((fs::path(m_installRoot) / "bin" / "engine-sim-app.exe").string()) << "\r\n";
     }
 
@@ -509,8 +551,15 @@ bool Updater::startRestart() {
             << "xattr -dr com.apple.quarantine " << quote(app) << " 2>/dev/null\n"
             << "open " << quote(app) << "\n";
 #else
-        file << "cp -Rf " << quote(staged + "/.") << " " << quote(m_installRoot + "/") << "\n"
-            << "exec " << quote(m_installRoot + "/bin/engine-sim-app") << "\n";
+        if (m_appImage) {
+            file << "mv -f " << quote(staged) << " " << quote(m_installRoot) << "\n"
+                << "chmod +x " << quote(m_installRoot) << "\n"
+                << "exec " << quote(m_installRoot) << "\n";
+        }
+        else {
+            file << "cp -Rf " << quote(staged + "/.") << " " << quote(m_installRoot + "/") << "\n"
+                << "exec " << quote(m_installRoot + "/bin/engine-sim-app") << "\n";
+        }
 #endif
     }
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(engine-sim
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Real-time internal combustion engine simulator"
     LANGUAGES C CXX)
 
@@ -301,6 +301,19 @@ if (ENGINE_SIM_BUILD_APP)
         include/ui/ui_widgets.h
     )
 
+    # Application icon
+    if (WIN32)
+        configure_file(
+            ${PROJECT_SOURCE_DIR}/packaging/windows/engine-sim.rc.in
+            ${PROJECT_BINARY_DIR}/generated/engine-sim.rc
+            @ONLY)
+        target_sources(engine-sim-app PRIVATE ${PROJECT_BINARY_DIR}/generated/engine-sim.rc)
+    elseif (APPLE)
+        set(ENGINE_SIM_ICNS ${PROJECT_SOURCE_DIR}/packaging/icons/engine-sim.icns)
+        set_source_files_properties(${ENGINE_SIM_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        target_sources(engine-sim-app PRIVATE ${ENGINE_SIM_ICNS})
+    endif()
+
     target_link_libraries(engine-sim-app PRIVATE
         engine-sim
         delta-basic
@@ -341,6 +354,7 @@ if (ENGINE_SIM_BUILD_APP)
             MACOSX_BUNDLE TRUE
             OUTPUT_NAME "Engine Simulator"
             MACOSX_BUNDLE_INFO_PLIST ${PROJECT_SOURCE_DIR}/packaging/macos/Info.plist.in
+            MACOSX_BUNDLE_ICON_FILE engine-sim.icns
             MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.engine-sim.community"
             MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
             MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
@@ -412,7 +426,7 @@ if (ENGINE_SIM_BUILD_APP)
     endif()
 
     if (UNIX AND NOT APPLE)
-        install(FILES packaging/linux/engine-sim.desktop DESTINATION .)
+        install(FILES packaging/linux/engine-sim.desktop packaging/icons/engine-sim.png DESTINATION .)
     endif()
 endif()
 

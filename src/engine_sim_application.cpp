@@ -223,6 +223,15 @@ bool EngineSimApplication::initialize(void *instance, ysContextObject::DeviceAPI
     m_geometryGenerator.initialize(100000, 200000);
 
     ysSdlWindow *sdlWindow = static_cast<ysSdlWindow *>(m_engine.GetGameWindow());
+
+#ifndef __APPLE__
+    // Window icon (macOS uses the app bundle's icon)
+    SDL_Surface *icon = SDL_LoadBMP((fs::path(m_assetPath) / "icon.bmp").string().c_str());
+    if (icon != nullptr) {
+        SDL_SetWindowIcon(sdlWindow->GetSdlWindow(), icon);
+        SDL_FreeSurface(icon);
+    }
+#endif
     if (!m_ui.initialize(this, sdlWindow->GetSdlWindow())) {
         m_startupError = "Could not initialize the user interface.";
         return false;
@@ -403,6 +412,11 @@ void EngineSimApplication::initialize() {
         if (basePath != nullptr) {
             updaterParams.executablePath = basePath;
             SDL_free(basePath);
+        }
+
+        const char *appImage = std::getenv("APPIMAGE");
+        if (appImage != nullptr) {
+            updaterParams.appImagePath = appImage;
         }
 
         const char *noUpdateCheck = std::getenv("ENGINE_SIM_NO_UPDATE_CHECK");

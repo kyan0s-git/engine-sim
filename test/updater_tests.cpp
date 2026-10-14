@@ -29,6 +29,10 @@ TEST(UpdaterTests, ParseRelease) {
                 "browser_download_url": "https://github.com/kyan0s-git/engine-sim/releases/download/v0.3.0/engine-sim-0.3.0-linux-x64.tar.gz"
             },
             {
+                "name": "engine-sim-0.3.0-linux-x86_64.AppImage",
+                "browser_download_url": "https://github.com/kyan0s-git/engine-sim/releases/download/v0.3.0/engine-sim-0.3.0-linux-x86_64.AppImage"
+            },
+            {
                 "name": "engine-sim-0.3.0-macos-universal.zip",
                 "browser_download_url": "https://github.com/kyan0s-git/engine-sim/releases/download/v0.3.0/engine-sim-0.3.0-macos-universal.zip"
             }
@@ -41,6 +45,10 @@ TEST(UpdaterTests, ParseRelease) {
     EXPECT_EQ(release.pageUrl, "https://github.com/kyan0s-git/engine-sim/releases/tag/v0.3.0");
     EXPECT_EQ(release.assetName, "engine-sim-0.3.0" + Updater::platformAssetSuffix());
     EXPECT_NE(release.assetUrl.find(release.assetName), std::string::npos);
+
+    Updater::Release appImage;
+    ASSERT_TRUE(Updater::parseRelease(json, &appImage, Updater::appImageAssetSuffix()));
+    EXPECT_EQ(appImage.assetName, "engine-sim-0.3.0-linux-x86_64.AppImage");
 
     std::string name;
     Updater::findJsonString(json, "name", json.find("\"tag_name\""), &name);

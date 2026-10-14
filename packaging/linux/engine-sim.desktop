@@ -3,5 +3,6 @@ Type=Application
 Name=Engine Simulator
 Comment=Real-time internal combustion engine simulator
 Exec=engine-sim-app
+Icon=engine-sim
 Terminal=false
 Categories=Game;Simulation;

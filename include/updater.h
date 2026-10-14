@@ -47,6 +47,10 @@ class Updater {
             std::string releaseUrl;
             std::string executablePath;
             std::string userDataPath;
+
+            // Running from an AppImage (the APPIMAGE environment variable):
+            // the AppImage file is replaced instead of an installation folder
+            std::string appImagePath;
         };
 
     public:
@@ -88,9 +92,14 @@ class Updater {
 
         // Package name suffix of this platform, e.g. "-linux-x64.tar.gz"
         static std::string platformAssetSuffix();
+        static std::string appImageAssetSuffix() { return "-linux-x86_64.AppImage"; }
 
-        // Parses the GitHub "latest release" JSON
+        // Parses the GitHub "latest release" JSON; the asset is the one whose
+        // name ends with `suffix` (default: platformAssetSuffix())
         static bool parseRelease(const std::string &json, Release *release);
+        static bool parseRelease(const std::string &json, Release *release, const std::string &suffix);
+
+        bool isAppImage() const { return m_appImage; }
 
     protected:
         void check();
@@ -102,6 +111,7 @@ class Updater {
         Parameters m_params;
         std::string m_installRoot;
         std::string m_stagedPath;
+        bool m_appImage = false;
 
         std::atomic<State> m_state;
         mutable std::mutex m_lock;

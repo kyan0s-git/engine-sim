@@ -252,7 +252,7 @@ How rotary engines are modeled:
 
 ## Themes
 
-Theme scripts change the colors and the units shown on the gauges. They import the light-weight `engine_sim_theme.mr` and call `set_application_settings`:
+Theme scripts change the colors of the engine view, the units shown in the instruments (unless the settings page overrides them) and, with the *Classic* interface theme, the colors of the interface. They import the light-weight `engine_sim_theme.mr` and call `set_application_settings`:
 
 ```
 import "engine_sim_theme.mr"

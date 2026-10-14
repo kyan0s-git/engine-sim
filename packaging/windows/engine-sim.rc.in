@@ -1,0 +1,2 @@
+// Application icon (the first icon resource is used by Explorer and SDL)
+1 ICON "@PROJECT_SOURCE_DIR@/packaging/icons/engine-sim.ico"

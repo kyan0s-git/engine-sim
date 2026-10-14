@@ -1,7 +1,8 @@
 name: Release
 
-# Builds self-contained packages for Windows, Linux and macOS and publishes
-# them as a GitHub release. Triggered by pushing a tag such as `v0.2.0`, or
+# Builds the installers (Windows setup program, macOS disk image, Linux
+# AppImage and Debian package) and portable archives (used by the in-app
+# updater) and publishes them as a GitHub release. Triggered by pushing a tag such as `v0.2.0`, or
 # manually from the Actions tab: without a release tag that only produces
 # artifacts; with one (e.g. `v0.2.0`) it publishes a release and creates the
 # tag on the commit the workflow ran on.
@@ -45,6 +46,7 @@ jobs:
         id: version
         shell: bash
         run: |
+          echo "numeric=$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
           if [[ -n "${RELEASE_TAG}" ]]; then
             VERSION="${RELEASE_TAG#v}"
             # The tag must match the version the application reports
@@ -142,16 +144,41 @@ jobs:
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/$env:STAGE" -DestinationPath "dist/$env:STAGE.zip"
+        run: |
+          Compress-Archive -Path "dist/$env:STAGE" -DestinationPath "dist/$env:STAGE.zip"
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            $nsis = "${env:ProgramFiles(x86)}\NSIS"
+            if (-not (Test-Path "$nsis\makensis.exe")) { choco install nsis -y --no-progress }
+            $env:PATH = "$nsis;$env:PATH"
+          }
+          $version = "${{ steps.version.outputs.version }}"
+          makensis /V2 "/DVERSION=$version" "/DNUMERIC_VERSION=${{ steps.version.outputs.numeric }}" `
+            "/DSOURCE_DIR=$PWD\dist\$env:STAGE" `
+            "/DOUTFILE=$PWD\dist\engine-sim-$version-windows-x64-setup.exe" `
+            packaging\windows\installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
-        run: tar -C dist -czf "dist/$STAGE.tar.gz" "$STAGE"
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          tar -C dist -czf "dist/$STAGE.tar.gz" "$STAGE"
+
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          packaging/linux/make_appimage.sh "dist/$STAGE" "dist/engine-sim-$VERSION-linux-x86_64.AppImage" "$PWD/appimagetool"
+          APPIMAGE_EXTRACT_AND_RUN=1 "dist/engine-sim-$VERSION-linux-x86_64.AppImage" --version
+
+          packaging/linux/make_deb.sh "dist/$STAGE" "$VERSION" "dist/engine-sim_${VERSION}_amd64.deb"
+          dpkg-deb --info "dist/engine-sim_${VERSION}_amd64.deb"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         # ditto preserves the bundle structure and code signature
-        run: ditto -c -k --keepParent "dist/$STAGE" "dist/$STAGE.zip"
+        run: |
+          ditto -c -k --keepParent "dist/$STAGE" "dist/$STAGE.zip"
+          packaging/macos/make_dmg.sh "dist/$STAGE" "dist/engine-sim-${{ steps.version.outputs.version }}-macos-universal.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -160,6 +187,10 @@ jobs:
           path: |
             dist/*.zip
             dist/*.tar.gz
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
           if-no-files-found: error
 
   release:
