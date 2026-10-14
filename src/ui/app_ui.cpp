@@ -570,6 +570,19 @@ void AppUi::applyStyle() {
 
     if (theme == "light") {
         ImGui::StyleColorsLight(&style);
+        ImVec4 *c = style.Colors;
+        c[ImGuiCol_WindowBg] = ImVec4(0.96f, 0.96f, 0.97f, 1.0f);
+        c[ImGuiCol_Button] = ImVec4(0.86f, 0.87f, 0.89f, 1.0f);
+        c[ImGuiCol_ButtonHovered] = ImVec4(0.78f, 0.80f, 0.83f, 1.0f);
+        c[ImGuiCol_Header] = ImVec4(0.88f, 0.89f, 0.91f, 1.0f);
+        c[ImGuiCol_HeaderHovered] = ImVec4(0.80f, 0.82f, 0.85f, 1.0f);
+        c[ImGuiCol_FrameBg] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        c[ImGuiCol_FrameBgHovered] = ImVec4(0.93f, 0.94f, 0.96f, 1.0f);
+        c[ImGuiCol_FrameBgActive] = ImVec4(0.88f, 0.90f, 0.93f, 1.0f);
+        c[ImGuiCol_Tab] = ImVec4(0.88f, 0.89f, 0.91f, 1.0f);
+        c[ImGuiCol_TabHovered] = ImVec4(0.80f, 0.82f, 0.85f, 1.0f);
+        c[ImGuiCol_TabSelected] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        c[ImGuiCol_Border] = ImVec4(0.78f, 0.79f, 0.82f, 1.0f);
         applyAccent(style, accent);
         ImPlot::StyleColorsLight();
     }
@@ -644,7 +657,7 @@ void AppUi::applyStyle() {
     style.TabRounding = 4.0f;
     style.ScrollbarRounding = 6.0f;
     style.WindowBorderSize = 1.0f;
-    style.FrameBorderSize = 0.0f;
+    style.FrameBorderSize = (theme == "light") ? 1.0f : 0.0f;
     style.WindowPadding = ImVec2(10, 10);
     style.FramePadding = ImVec2(8, 4);
     style.ItemSpacing = ImVec2(8, 6);
@@ -1508,6 +1521,9 @@ void AppUi::buildCylinderPlot() {
         ImPlot::SetupAxis(ImAxis_X1, "Crank angle after firing TDC [deg]");
         ImPlot::SetupAxis(ImAxis_Y1, imperial ? "Pressure [psi]" : "Pressure [bar]", ImPlotAxisFlags_AutoFit);
         ImPlot::SetupAxis(ImAxis_Y2, "Valve lift [mm]", ImPlotAxisFlags_AuxDefault | ImPlotAxisFlags_AutoFit);
+        // Keep flat data (engine stopped) from being zoomed into noise
+        ImPlot::SetupAxisZoomConstraints(ImAxis_Y1, imperial ? 5.0 : 0.5, HUGE_VAL);
+        ImPlot::SetupAxisZoomConstraints(ImAxis_Y2, 2.0, HUGE_VAL);
         if (showTemperature) {
             const std::string label = std::string("Temperature [") + temperatureUnits() + "]";
             ImPlot::SetupAxis(ImAxis_Y3, label.c_str(), ImPlotAxisFlags_AuxDefault | ImPlotAxisFlags_AutoFit);
@@ -1580,6 +1596,7 @@ void AppUi::buildFlowPlot() {
     if (ImPlot::BeginPlot("##flow", ImVec2(-1, -1), ImPlotFlags_NoTitle)) {
         ImPlot::SetupAxis(ImAxis_X1, "Crank angle after firing TDC [deg]");
         ImPlot::SetupAxis(ImAxis_Y1, "Flow [scfm]", ImPlotAxisFlags_AutoFit);
+        ImPlot::SetupAxisZoomConstraints(ImAxis_Y1, 2.0, HUGE_VAL);
         ImPlot::SetupAxisLimits(ImAxis_X1, -halfCycle, halfCycle, ImPlotCond_Once);
         ImPlot::SetupLegend(ImPlotLocation_NorthEast);
 
@@ -1641,8 +1658,10 @@ void AppUi::buildTrendPlot() {
     if (ImPlot::BeginPlot("##history", ImVec2(-1, -1), ImPlotFlags_NoTitle)) {
         ImPlot::SetupAxis(ImAxis_X1, "Time [s]");
         ImPlot::SetupAxis(ImAxis_Y1, "Engine speed [rpm]", ImPlotAxisFlags_AutoFit);
+        ImPlot::SetupAxisZoomConstraints(ImAxis_Y1, 500.0, HUGE_VAL);
         ImPlot::SetupAxis(ImAxis_Y2, "Manifold [kPa]", ImPlotAxisFlags_AuxDefault);
         ImPlot::SetupAxis(ImAxis_Y3, torqueLabel.c_str(), ImPlotAxisFlags_AuxDefault | ImPlotAxisFlags_AutoFit);
+        ImPlot::SetupAxisZoomConstraints(ImAxis_Y3, 10.0, HUGE_VAL);
         ImPlot::SetupAxisLimits(ImAxis_X1, m_clock - 10.0, m_clock, ImPlotCond_Always);
         ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 110, ImPlotCond_Once);
         ImPlot::SetupLegend(ImPlotLocation_NorthWest);

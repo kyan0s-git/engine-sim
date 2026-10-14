@@ -12,9 +12,9 @@ trap 'rm -rf "$WORK"' EXIT
 
 ditto "$STAGE/Engine Simulator.app" "$WORK/Engine Simulator.app"
 for f in LICENSE README.md CHANGELOG.md; do
-    [ -f "$STAGE/$f" ] && cp "$STAGE/$f" "$WORK/"
+    if [ -f "$STAGE/$f" ]; then cp "$STAGE/$f" "$WORK/"; fi
 done
-[ -d "$STAGE/docs" ] && ditto "$STAGE/docs" "$WORK/docs"
+if [ -d "$STAGE/docs" ]; then ditto "$STAGE/docs" "$WORK/docs"; fi
 ln -s /Applications "$WORK/Applications"
 
 hdiutil create -volname "Engine Simulator" -srcfolder "$WORK" -fs HFS+ -format UDZO -ov "$OUTPUT"
