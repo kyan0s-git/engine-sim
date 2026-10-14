@@ -117,6 +117,10 @@ private:
     double m_simulationSpeed;
 
     double *m_dynoTorqueSamples;
+
+    // When the audio output was last read (to tell whether anything is
+    // consuming the synthesized audio)
+    std::chrono::steady_clock::time_point m_lastAudioRead;
     int m_lastDynoTorqueSample;
 
     double m_filteredEngineSpeed;

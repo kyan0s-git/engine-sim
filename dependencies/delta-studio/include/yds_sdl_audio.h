@@ -72,7 +72,17 @@ public:
 
     bool IsPlaying() const { return m_playing.load(); }
 
+    // Streaming mode: samples are cleared once they have been played, so a
+    // writer that falls behind produces silence instead of replaying stale
+    // data from the previous pass through the looping buffer
+    void SetClearAfterPlayback(bool clear) { m_clearAfterPlayback = clear; }
+
+    // Fills the whole buffer with silence
+    void Clear();
+
 protected:
+    void ClearRange(SampleOffset from, SampleOffset to);
+
     // Called from the audio thread. Adds this source's contribution to the
     // stereo float mix buffer.
     void Mix(float *output, int frames, int outputSampleRate);
@@ -88,6 +98,8 @@ protected:
 
     std::atomic<float> m_gainLeft;
     std::atomic<float> m_gainRight;
+
+    std::atomic<bool> m_clearAfterPlayback;
 };
 
 class ysSdlAudioDevice : public ysAudioDevice {

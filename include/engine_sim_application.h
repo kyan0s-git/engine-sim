@@ -20,6 +20,7 @@
 #include "delta.h"
 #include "dtv.h"
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -226,6 +227,8 @@ class EngineSimApplication {
         EngineView *m_engineView;
         AppUi m_ui;
         bool m_restartRequested = false;
+        std::chrono::steady_clock::time_point m_lastProcessTime;
+        double m_frameTimePeak = 1 / 60.0;
         float m_appliedVolume = -1.0f;
         SimulationObject::ViewParameters m_viewParameters;
 

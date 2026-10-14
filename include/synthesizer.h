@@ -75,12 +75,15 @@ class Synthesizer {
         void writeInput(const double *data);
         void endInputBlock();
 
-        void waitProcessed();
-
         void audioRenderingThread();
         void renderAudio();
 
+        // Audio queued in the synthesizer (input waiting to be rendered and
+        // rendered output waiting to be read) [s]
         double getLatency() const;
+
+        // Most rendered audio kept ready for readAudioOutput() [samples]
+        static constexpr int MaxRenderedSamples = 11025;
 
         int inputDelta(int s1, int s0) const;
         double inputDistance(double s1, double s0) const;
@@ -113,10 +116,11 @@ class Synthesizer {
 
         std::thread *m_thread;
         std::atomic<bool> m_run;
-        bool m_processed;
 
-        std::mutex m_inputLock;
-        std::mutex m_lock0;
+        // m_inputLock guards the input channels, m_lock0 the rendered audio
+        // and the parameters. Lock order: m_lock0, then m_inputLock.
+        mutable std::mutex m_inputLock;
+        mutable std::mutex m_lock0;
         std::condition_variable m_cv0;
 
         ProcessingFilters *m_filters;

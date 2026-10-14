@@ -113,6 +113,7 @@ class AppUi {
         void buildPerformanceTable();
 
         void collectFrameData();
+        void averageMetrics(double dt);
         void resetAngleData();
         void resetDynoData();
         void refreshScriptLists();
@@ -226,7 +227,9 @@ class AppUi {
         double m_audioLatency;
         double m_inputBufferUsage;
 
-        EngineMetrics m_metrics;
+        EngineMetrics m_metrics;            // last complete cycle of each cylinder
+        EngineMetrics m_shownMetrics;       // averaged over about half a second
+        double m_firingFraction;            // share of recent cycles that burned
 
         // Values of the tunable parameters when the engine was loaded
         struct TuningDefaults {

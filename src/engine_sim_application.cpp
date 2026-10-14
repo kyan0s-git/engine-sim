@@ -24,6 +24,7 @@
 
 #include <delta-studio/include/yds_error_handler.h>
 #include <delta-studio/include/yds_error_system.h>
+#include <delta-studio/include/yds_sdl_audio.h>
 #include <delta-studio/include/yds_sdl_window.h>
 
 #include <SDL.h>
@@ -468,6 +469,13 @@ void EngineSimApplication::initialize() {
         m_engine.GetAudioDevice()->CreateBuffer(&params, 44100);
 
     m_audioSource = m_engine.GetAudioDevice()->CreateSource(m_outputAudioBuffer);
+
+    // The buffer is a stream: play silence rather than old audio whenever
+    // the simulation falls behind, is paused or is loading an engine
+    ysSdlAudioSource *sdlSource = dynamic_cast<ysSdlAudioSource *>(m_audioSource);
+    if (sdlSource != nullptr) {
+        sdlSource->SetClearAfterPlayback(true);
+    }
     m_audioSource->SetMode((m_simulator != nullptr && m_simulator->getEngine() != nullptr)
         ? ysAudioSource::Mode::Loop
         : ysAudioSource::Mode::Stop);
@@ -524,8 +532,15 @@ void EngineSimApplication::process(float frame_dt) {
 
     m_simulator->setSimulationSpeed(speed);
 
-    const double avgFramerate = clamp(m_engine.GetAverageFramerate(), 30.0f, 1000.0f);
-    m_simulator->startFrame(1 / avgFramerate);
+    // Real time since the previous frame was simulated (the simulator
+    // limits how much it catches up after a stall)
+    const auto now = std::chrono::steady_clock::now();
+    double elapsed = 1 / 60.0;
+    if (m_lastProcessTime.time_since_epoch().count() != 0) {
+        elapsed = std::chrono::duration<double>(now - m_lastProcessTime).count();
+    }
+    m_lastProcessTime = now;
+    m_simulator->startFrame(elapsed);
 
     auto proc_t0 = std::chrono::steady_clock::now();
     const int iterationCount = m_simulator->getFrameIterationCount();
@@ -542,17 +557,25 @@ void EngineSimApplication::process(float frame_dt) {
         ? duration.count() / iterationCount
         : 0.0;
 
+    // Keep enough audio queued in the output buffer to cover the longest
+    // recent frame; a fixed 100 ms ran dry whenever frames took longer
+    // (slow computers, heavy engines, window dragging)
+    m_frameTimePeak = std::max(std::min(elapsed, 0.2), m_frameTimePeak * 0.995);
+    const double outputLead = std::clamp(1.5 * m_frameTimePeak + 0.03, 0.1, 0.35);
+
     const SampleOffset safeWritePosition = m_audioSource->GetCurrentWritePosition();
     const SampleOffset writePosition = m_audioBuffer.m_writePointer;
 
     SampleOffset targetWritePosition =
-        m_audioBuffer.getBufferIndex(safeWritePosition, (int)(44100 * 0.1));
+        m_audioBuffer.getBufferIndex(safeWritePosition, (int)(44100 * outputLead));
     SampleOffset maxWrite = m_audioBuffer.offsetDelta(writePosition, targetWritePosition);
 
     SampleOffset currentLead = m_audioBuffer.offsetDelta(safeWritePosition, writePosition);
     SampleOffset newLead = m_audioBuffer.offsetDelta(safeWritePosition, targetWritePosition);
 
-    if (currentLead > 44100 * 0.5) {
+    if (currentLead > 44100 * 0.6) {
+        // The playback position passed the written audio (it ran dry):
+        // continue a little ahead of it
         m_audioBuffer.m_writePointer = m_audioBuffer.getBufferIndex(safeWritePosition, (int)(44100 * 0.05));
         currentLead = m_audioBuffer.offsetDelta(safeWritePosition, m_audioBuffer.m_writePointer);
         maxWrite = m_audioBuffer.offsetDelta(m_audioBuffer.m_writePointer, targetWritePosition);
@@ -599,7 +622,7 @@ void EngineSimApplication::process(float frame_dt) {
 
     m_ui.addFrameTiming(
         timePerStep,
-        m_audioBuffer.offsetDelta(m_audioSource->GetCurrentWritePosition(), m_audioBuffer.m_writePointer) / (44100 * 0.1),
+        m_audioBuffer.offsetDelta(m_audioSource->GetCurrentWritePosition(), m_audioBuffer.m_writePointer) / (44100 * outputLead),
         (double)m_simulator->getSynthesizerInputLatency() / m_simulator->getSynthesizerInputLatencyTarget());
 }
 
@@ -1272,6 +1295,12 @@ void EngineSimApplication::loadThemeScript(const std::string &path) {
 void EngineSimApplication::reloadScripts() {
     if (m_audioSource != nullptr) {
         m_audioSource->SetMode(ysAudioSource::Mode::Stop);
+
+        // Don't play the end of the previous engine's sound
+        ysSdlAudioSource *sdlSource = dynamic_cast<ysSdlAudioSource *>(m_audioSource);
+        if (sdlSource != nullptr) {
+            sdlSource->Clear();
+        }
     }
 
     loadScript();

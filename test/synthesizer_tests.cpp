@@ -3,7 +3,10 @@
 #include "../include/synthesizer.h"
 #include "../include/convolution_filter.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -100,6 +103,11 @@ TEST(SynthesizerTests, ProducesBoundedAudio) {
 
     EXPECT_GT(nonZero, (int)output.size() / 2);
 
+    // The leveler limits the peaks to its target so nothing clips
+    int peak = 0;
+    for (const int16_t sample : output) peak = std::max(peak, std::abs((int)sample));
+    EXPECT_LE(peak, (int)Synthesizer::AudioParameters().levelerTarget + 1);
+
     synth.destroy();
 }
 
@@ -113,19 +121,33 @@ TEST(SynthesizerTests, RenderingThread) {
     int total = 0;
 
     for (int i = 0; i < 20000;) {
+        // Like the simulator, only produce input while the queue is short
+        for (int wait = 0; wait < 1000 && synth.getLatency() > 0.1; ++wait) {
+            total += synth.readAudioOutput((int)block.size(), block.data());
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
         for (int j = 0; j < 100; ++j, ++i) {
             data[0] = 1000.0 * std::sin(i * 0.05);
             synth.writeInput(data.data());
         }
 
         synth.endInputBlock();
-        synth.waitProcessed();
+        total += synth.readAudioOutput(441, block.data());
+    }
+
+    // The rendering thread works independently of the input blocks; all of
+    // the input should come out (20000 samples at 10 kHz = 2 s of audio)
+    const int expected = static_cast<int>(20000 * 44100.0 / 10000);
+    for (int wait = 0; wait < 400 && total < expected - 100; ++wait) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         total += synth.readAudioOutput((int)block.size(), block.data());
     }
 
     synth.endAudioRenderingThread();
 
-    EXPECT_GT(total, 0);
+    EXPECT_GT(total, expected - 100);
+    EXPECT_NEAR(synth.getLatency(), 0.0, 0.01);
 
     synth.destroy();
 }

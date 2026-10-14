@@ -13,9 +13,13 @@ class LevelingFilter : public Filter {
         virtual float f(float sample);
         float getAttenuation() const { return m_attenuation; }
 
+        // How quickly the gain recovers after a peak
+        void setReleaseTime(float seconds, float sampleRate);
+
     protected:
         float m_peak;
         float m_attenuation;
+        float m_release;
 
     public:
         float p_maxLevel;

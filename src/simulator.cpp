@@ -86,19 +86,29 @@ void Simulator::startFrame(double dt) {
     m_currentIteration = 0;
     m_synthesizer.setInputSampleRate(m_simulationFrequency * m_simulationSpeed);
 
+    // Simulate enough to produce the frame's worth of audio plus a share of
+    // the difference between the audio queued in the synthesizer and the
+    // target, so the queue neither runs dry (crackling) nor grows. The step
+    // count follows the measured frame time; it used to assume at least
+    // 30 frames per second, which starved the audio on slower frames.
     const double timestep = getTimestep();
-    m_steps = (int)std::round((dt * m_simulationSpeed) / timestep);
-
-    const double targetLatency = getSynthesizerInputLatencyTarget();
-    if (m_synthesizer.getLatency() < targetLatency) {
-        m_steps = static_cast<int>((m_steps + 1) * 1.1);
+    const double frameTime = std::clamp(dt, 0.0, 0.1);
+    const double target = getSynthesizerInputLatencyTarget();
+    const double latency = m_synthesizer.getLatency();
+    double audioTime;
+    const auto now = std::chrono::steady_clock::now();
+    if (m_lastAudioRead.time_since_epoch().count() == 0) m_lastAudioRead = now;
+    const double sinceRead = std::chrono::duration<double>(now - m_lastAudioRead).count();
+    if (sinceRead > 0.3 && latency >= target) {
+        // Nobody is reading the audio (no output device): keep simulating
+        // in real time; the synthesizer drops the oldest input instead of
+        // overflowing
+        audioTime = frameTime;
     }
-    else if (m_synthesizer.getLatency() > targetLatency) {
-        m_steps = static_cast<int>((m_steps - 1) * 0.9);
-        if (m_steps < 0) {
-            m_steps = 0;
-        }
+    else {
+        audioTime = std::clamp(frameTime + 0.5 * (target - latency), 0.0, 0.15);
     }
+    m_steps = static_cast<int>(std::round(audioTime * m_simulationSpeed / timestep));
 
     if (m_steps > 0) {
         for (int i = 0; i < m_engine->getIntakeCount(); ++i) {
@@ -172,7 +182,9 @@ double Simulator::getTotalExhaustFlow() const {
 }
 
 int Simulator::readAudioOutput(int samples, int16_t *target) {
-    return m_synthesizer.readAudioOutput(samples, target);
+    const int read = m_synthesizer.readAudioOutput(samples, target);
+    if (read > 0) m_lastAudioRead = std::chrono::steady_clock::now();
+    return read;
 }
 
 void Simulator::endFrame() {

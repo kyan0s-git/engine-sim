@@ -169,6 +169,7 @@ AppUi::AppUi() {
     m_audioDecimation = 0;
 
     m_timePerStep = 0;
+    m_firingFraction = 0;
     m_audioLatency = 0;
     m_inputBufferUsage = 0;
 
@@ -312,6 +313,8 @@ void AppUi::onEngineLoaded(Engine *engine, Simulator *simulator) {
     m_plotCylinder = 0;
     m_sampledCylinder = -1;
     m_metrics = EngineMetrics();
+    m_shownMetrics = EngineMetrics();
+    m_firingFraction = 0;
     resetAngleData();
     resetDynoData();
 
@@ -460,7 +463,7 @@ void AppUi::collectFrameData() {
     m_clock += dt;
 
     if (m_engine == nullptr || m_simulator == nullptr) {
-        m_metrics = EngineMetrics();
+        m_metrics = m_shownMetrics = EngineMetrics();
         return;
     }
 
@@ -468,6 +471,7 @@ void AppUi::collectFrameData() {
         ? m_simulator->getFilteredDynoTorque()
         : 0.0;
     m_metrics = calculateEngineMetrics(*m_engine, brakeTorque);
+    averageMetrics(dt);
 
     const double rpm = m_engine->getRpm();
     m_frameTime[m_frameHistoryIndex] = static_cast<float>(m_clock);
@@ -493,6 +497,59 @@ void AppUi::collectFrameData() {
             }
         }
     }
+}
+
+void AppUi::averageMetrics(double dt) {
+    // The metrics change with every cycle of every cylinder, and the rev
+    // limiter alternates between full combustion and none, so the readouts
+    // show a short running average instead
+    const EngineMetrics &m = m_metrics;
+    EngineMetrics &shown = m_shownMetrics;
+
+    if (!m.valid) {
+        shown = m;
+        m_firingFraction = 0;
+        return;
+    }
+
+    const double firing = (m.cylinders > 0) ? double(m.firingCylinders) / m.cylinders : 0.0;
+    if (!shown.valid) {
+        shown = m;
+        m_firingFraction = firing;
+        return;
+    }
+
+    const double s = 1.0 - std::exp(-std::max(dt, 0.0) / 0.5);
+    auto blend = [s](double &a, double b) { a += (b - a) * s; };
+
+    double EngineMetrics::*always[] = {
+        &EngineMetrics::speed, &EngineMetrics::imepGross, &EngineMetrics::imepNet,
+        &EngineMetrics::pmep, &EngineMetrics::bmep, &EngineMetrics::fmep,
+        &EngineMetrics::fmepModel, &EngineMetrics::indicatedTorque, &EngineMetrics::brakeTorque,
+        &EngineMetrics::indicatedPower, &EngineMetrics::brakePower,
+        &EngineMetrics::mechanicalEfficiency, &EngineMetrics::indicatedEfficiency,
+        &EngineMetrics::brakeEfficiency, &EngineMetrics::fuelFlow, &EngineMetrics::airFlow,
+        &EngineMetrics::isfc, &EngineMetrics::bsfc, &EngineMetrics::volumetricEfficiency,
+        &EngineMetrics::afr, &EngineMetrics::lambda, &EngineMetrics::peakPressure,
+        &EngineMetrics::peakTemperature, &EngineMetrics::heatLossFraction
+    };
+    for (double EngineMetrics::*field : always) blend(shown.*field, m.*field);
+
+    // Burn angles only exist for cycles that burned
+    if (m.firingCylinders > 0) {
+        double EngineMetrics::*combustion[] = {
+            &EngineMetrics::sparkAdvance, &EngineMetrics::ca10, &EngineMetrics::ca50,
+            &EngineMetrics::ca90, &EngineMetrics::peakPressureAngle
+        };
+        for (double EngineMetrics::*field : combustion) {
+            if (shown.firingCylinders > 0) blend(shown.*field, m.*field);
+            else shown.*field = m.*field;
+        }
+        shown.firingCylinders = m.firingCylinders;
+    }
+
+    shown.cylinders = m.cylinders;
+    blend(m_firingFraction, firing);
 }
 
 // Units ---------------------------------------------------------------------
@@ -867,6 +924,7 @@ void AppUi::buildEngineMenu() {
     for (const std::string &script : m_engineScripts) {
         const fs::path path(script);
         const std::string group = path.parent_path().filename().string();
+        const std::string groupPath = path.parent_path().string();
         const bool selected = (script == m_app->getEngineScriptPath());
 
         if (group == "assets") {
@@ -877,14 +935,20 @@ void AppUi::buildEngineMenu() {
             continue;
         }
 
-        if (group != currentGroup) {
+        // Folders with the same name (bundled and user engines) are
+        // separate menus; the IDs come from the full paths
+        if (groupPath != currentGroup) {
             if (groupOpen) ImGui::EndMenu();
-            currentGroup = group;
-            groupOpen = ImGui::BeginMenu(group.c_str());
+            currentGroup = groupPath;
+            groupOpen = ImGui::BeginMenu((group + "###" + groupPath).c_str());
         }
 
-        if (groupOpen && ImGui::MenuItem(path.stem().string().c_str(), nullptr, selected)) {
-            m_controls.loadScript = script;
+        if (groupOpen) {
+            ImGui::PushID(script.c_str());
+            if (ImGui::MenuItem(path.stem().string().c_str(), nullptr, selected)) {
+                m_controls.loadScript = script;
+            }
+            ImGui::PopID();
         }
     }
 
@@ -952,9 +1016,11 @@ void AppUi::buildMenuBar() {
             }
 
             for (const std::string &theme : m_themeScripts) {
+                ImGui::PushID(theme.c_str());
                 if (ImGui::MenuItem(fs::path(theme).stem().string().c_str(), nullptr, theme == m_app->getThemeScriptPath())) {
                     m_controls.loadTheme = theme;
                 }
+                ImGui::PopID();
             }
             ImGui::EndMenu();
         }
@@ -1237,7 +1303,9 @@ void AppUi::buildInstrumentPanel() {
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float gaugeSize = std::floor((ImGui::GetContentRegionAvail().x - spacing) / 2);
     const double rpm = std::max(0.0, m_engine->getRpm());
-    const EngineMetrics &m = m_metrics;
+    const EngineMetrics &m = m_shownMetrics;
+    const bool limiting = m_engine->getIgnitionModule()->m_enabled
+        && m_engine->getIgnitionModule()->isLimiting();
 
     // Tachometer
     {
@@ -1410,16 +1478,27 @@ void AppUi::buildInstrumentPanel() {
     if (ImGui::CollapsingHeader("Combustion", ImGuiTreeNodeFlags_DefaultOpen)
         && ImGui::BeginTable("##combustion", 2, tableFlags))
     {
+        if (limiting) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::DangerColor()), "Rev limiter");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::DangerColor()), "cutting spark");
+        }
+
         if (m.valid && m.firingCylinders > 0) {
+            ui::ValueRow("Cycles firing", "%.0f %%", m_firingFraction * 100);
             ui::ValueRow("Spark", "%.1f deg BTDC", m.sparkAdvance);
             ui::ValueRow("CA10 / 50 / 90", "%.1f / %.1f / %.1f", m.ca10, m.ca50, m.ca90);
             ui::ValueRow("Peak pressure", "%.1f %s @ %.1f deg", mep(m.peakPressure), mepUnits, m.peakPressureAngle);
             ui::ValueRow("Peak temperature", "%.0f %s", toTemperature(m.peakTemperature), temperatureUnits());
             ui::ValueRow("Wall heat loss", "%.1f %% of fuel", m.heatLossFraction * 100);
-            ui::ValueRow("Firing", "%d of %d", m.firingCylinders, m.cylinders);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("Averaged over the last half second");
         }
         else {
-            ui::ValueRow("Combustion", "no complete firing cycle");
+            ui::ValueRow("Combustion", m.valid ? "no cylinder fired" : "no complete cycle yet");
         }
 
         ImGui::EndTable();
@@ -1488,7 +1567,7 @@ void AppUi::buildCylinderSelector() {
 
     ImGui::SetNextItemWidth(130 * m_preferences.uiScale);
     const std::string preview = "Cylinder " + std::to_string(m_plotCylinder + 1);
-    if (ImGui::BeginCombo("##cylinder", preview.c_str())) {
+    if (ImGui::BeginCombo("##cylinderselect", preview.c_str())) {
         for (int i = 0; i < cylinders; ++i) {
             const std::string label = "Cylinder " + std::to_string(i + 1);
             if (ImGui::Selectable(label.c_str(), i == m_plotCylinder)) m_plotCylinder = i;
@@ -1517,7 +1596,7 @@ void AppUi::buildCylinderPlot() {
     ImGui::SameLine();
     ImGui::Checkbox("Gas temperature", &showTemperature);
 
-    if (ImPlot::BeginPlot("##cylinder", ImVec2(-1, -1), ImPlotFlags_NoTitle)) {
+    if (ImPlot::BeginPlot("##cylinderplot", ImVec2(-1, -1), ImPlotFlags_NoTitle)) {
         ImPlot::SetupAxis(ImAxis_X1, "Crank angle after firing TDC [deg]");
         ImPlot::SetupAxis(ImAxis_Y1, imperial ? "Pressure [psi]" : "Pressure [bar]", ImPlotAxisFlags_AutoFit);
         ImPlot::SetupAxis(ImAxis_Y2, "Valve lift [mm]", ImPlotAxisFlags_AuxDefault | ImPlotAxisFlags_AutoFit);
@@ -1727,12 +1806,14 @@ void AppUi::buildEngineViewOverlay() {
     char text[160];
     const Transmission *transmission = m_simulator->getTransmission();
     const int gear = (transmission != nullptr) ? transmission->getGear() : -1;
-    std::snprintf(text, sizeof(text), "%.0f rpm   %s   throttle %.0f%%%s%s",
+    const bool limiting = m_engine->getIgnitionModule()->m_enabled && m_engine->getIgnitionModule()->isLimiting();
+    std::snprintf(text, sizeof(text), "%.0f rpm   %s   throttle %.0f%%%s%s%s",
         std::max(0.0, m_engine->getRpm()),
         gear < 0 ? "N" : ("gear " + std::to_string(gear + 1)).c_str(),
         m_engine->getSpeedControl() * 100,
         m_simulator->m_dyno.m_enabled ? "   dyno" : "",
-        m_engine->getIgnitionModule()->m_enabled ? "" : "   ignition off");
+        m_engine->getIgnitionModule()->m_enabled ? "" : "   ignition off",
+        limiting ? "   REV LIMITER" : "");
 
     const ImU32 shadow = IM_COL32(0, 0, 0, 160);
     draw->AddText(ImVec2(origin.x + 1, origin.y + 1), shadow, text);

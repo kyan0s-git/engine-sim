@@ -49,6 +49,9 @@ class IgnitionModule : public Part {
         double getTimingOffset() const { return m_timingOffset; }
 
         void setRevLimit(double revLimit) { m_revLimit = revLimit; }
+
+        // True while the rev limiter is cutting the spark
+        bool isLimiting() const { return m_revLimitTimer > 0; }
         double getRevLimit() const { return m_revLimit; }
 
         bool m_enabled;

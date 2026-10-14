@@ -71,6 +71,7 @@ ysSdlAudioSource::ysSdlAudioSource() : ysAudioSource(API::Sdl) {
     m_looping = false;
     m_gainLeft = 1.0f;
     m_gainRight = 1.0f;
+    m_clearAfterPlayback = false;
 }
 
 ysSdlAudioSource::~ysSdlAudioSource() {
@@ -237,6 +238,22 @@ ysError ysSdlAudioSource::Destroy() {
     return YDS_ERROR_RETURN(ysError::None);
 }
 
+void ysSdlAudioSource::Clear() {
+    if (m_device != nullptr) m_device->Lock();
+    ClearRange(0, m_bufferSize);
+    if (m_device != nullptr) m_device->Unlock();
+}
+
+void ysSdlAudioSource::ClearRange(SampleOffset from, SampleOffset to) {
+    if (m_bufferSize == 0 || m_data.empty() || from >= to) return;
+
+    // 8-bit samples are unsigned with silence at 128
+    const uint8_t silence = (m_audioParameters.m_bitsPerSample == 8) ? 128 : 0;
+    const size_t begin = m_audioParameters.GetSizeFromSamples(from);
+    const size_t end = std::min(m_data.size(), static_cast<size_t>(m_audioParameters.GetSizeFromSamples(to)));
+    if (begin < end) std::memset(m_data.data() + begin, silence, end - begin);
+}
+
 float ysSdlAudioSource::ReadSample(SampleOffset index, int channel) const {
     const int channels = m_audioParameters.m_channelCount;
     const int bytesPerSample = m_audioParameters.m_bitsPerSample / 8;
@@ -273,6 +290,10 @@ void ysSdlAudioSource::Mix(float *output, int frames, int outputSampleRate) {
     const bool stereo = m_audioParameters.m_channelCount >= 2;
 
     double cursor = m_playCursor;
+    const bool clear = m_clearAfterPlayback && looping;
+    SampleOffset clearFrom = static_cast<SampleOffset>(cursor);
+    SampleOffset played = 0;      // whole samples passed during this call
+
     for (int i = 0; i < frames; ++i) {
         if (cursor >= m_bufferSize) {
             if (looping) {
@@ -303,7 +324,18 @@ void ysSdlAudioSource::Mix(float *output, int frames, int outputSampleRate) {
         output[2 * i + 0] += left * gainLeft;
         output[2 * i + 1] += right * gainRight;
 
+        const SampleOffset before = static_cast<SampleOffset>(cursor);
         cursor += step;
+        played += static_cast<SampleOffset>(cursor) - before;
+    }
+
+    if (clear && played > 0) {
+        // Clear the samples that were played, wrapping around the end
+        played = std::min(played, m_bufferSize);
+        const SampleOffset from = clearFrom % m_bufferSize;
+        const SampleOffset firstPart = std::min(played, m_bufferSize - from);
+        ClearRange(from, from + firstPart);
+        ClearRange(0, played - firstPart);
     }
 
     m_playCursor = looping ? std::fmod(cursor, static_cast<double>(m_bufferSize)) : cursor;

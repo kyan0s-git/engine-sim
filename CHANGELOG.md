@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
+## [0.3.1] - 2026-10-14
+
+### Audio
+- Fixed crackling. The synthesizer rendered at most once per frame and kept
+  only 45 ms of audio ready, so any frame slower than about 22 fps ran the
+  output dry; it now renders continuously as input arrives.
+- When the output did run dry, the sound card replayed the last second of
+  audio from its loop buffer. It now plays silence instead, which also
+  removes the loop of old sound while paused, loading an engine or dragging
+  the window.
+- The simulation follows the measured frame time and keeps a steady amount
+  of audio queued (it assumed at least 30 frames per second), and the
+  output buffer grows with the frame time on slow computers.
+- The level limiter no longer overshoots: about 3% of samples were hard
+  clipped at full throttle. Peaks are now held below full scale.
+- Fixed a race between the simulation and the audio thread that could drop
+  a block of audio.
+- Without an audio device the simulation keeps running in real time.
+
+### Interface
+- The rev limiter is shown in the engine view and the combustion readout,
+  together with the share of cycles that fire. The instrument readouts are
+  averaged over half a second instead of jumping between the firing and
+  cut cycles.
+- Fixed the Dear ImGui "conflicting ID" warning on the analysis panel (the
+  cylinder selector and the cylinder plot shared an identifier) and made
+  menu entries unique when user and bundled engines share a folder name.
+
 ## [0.3.0] - 2026-10-14
 
 ### Installers
