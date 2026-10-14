@@ -540,13 +540,13 @@ double AppUi::toSpeed(double metersPerSecond) const {
         : units::convert(metersPerSecond, units::km / units::hour);
 }
 
-double AppUi::toPressure(double pascal) const {
+double AppUi::toPressure(double pressure) const {
     const std::string u = pressureUnits();
-    if (u == "kPa") return units::convert(pascal, units::kPa);
-    if (u == "mbar") return units::convert(pascal, units::mbar);
-    if (u == "bar") return units::convert(pascal, units::bar);
-    if (u == "psi") return units::convert(pascal, units::psi);
-    return units::convert(pascal, units::inHg);
+    if (u == "kPa") return units::convert(pressure, units::kPa);
+    if (u == "mbar") return units::convert(pressure, units::mbar);
+    if (u == "bar") return units::convert(pressure, units::bar);
+    if (u == "psi") return units::convert(pressure, units::psi);
+    return units::convert(pressure, units::inHg);
 }
 
 double AppUi::toTemperature(double kelvin) const {

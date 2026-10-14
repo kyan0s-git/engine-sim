@@ -127,7 +127,7 @@ class AppUi {
         double toPower(double watts) const;
         double toTorque(double newtonMeters) const;
         double toSpeed(double metersPerSecond) const;
-        double toPressure(double pascal) const;     // absolute
+        double toPressure(double pressure) const;     // absolute
         double toTemperature(double kelvin) const;
         const char *temperatureUnits() const;
 
