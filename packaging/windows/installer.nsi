@@ -22,6 +22,13 @@ SetCompressor /SOLID lzma
   !define OUTFILE "engine-sim-${VERSION}-windows-x64-setup.exe"
 !endif
 
+; Path separator of the machine running makensis (wildcards need the native one)
+!ifdef NSIS_WIN32_MAKENSIS
+  !define SEP "\"
+!else
+  !define SEP "/"
+!endif
+
 !define APP_NAME "Engine Simulator"
 !define APP_EXE "bin\engine-sim-app.exe"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\EngineSimulator"
@@ -52,7 +59,7 @@ VIAddVersionKey "LegalCopyright" "MIT license"
 !define MUI_FINISHPAGE_RUN_TEXT "Start ${APP_NAME}"
 
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "${SOURCE_DIR}/LICENSE"
+!insertmacro MUI_PAGE_LICENSE "${SOURCE_DIR}${SEP}LICENSE"
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -74,7 +81,7 @@ Section "!${APP_NAME}" SecMain
   RMDir /r "$INSTDIR\docs"
 
   SetOutPath "$INSTDIR"
-  File /r "${SOURCE_DIR}/*"
+  File /r "${SOURCE_DIR}${SEP}*"
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
