@@ -26,6 +26,12 @@ public:
     // Enable or disable vertical synchronization
     void SetVsync(bool enabled);
 
+    // Called right before the frame is presented, with the default
+    // framebuffer bound and the viewport covering the whole window (used to
+    // draw overlays such as an immediate-mode UI)
+    typedef void (*PresentHook)(void *user);
+    static void SetPresentHook(PresentHook hook, void *user);
+
 protected:
     void *m_context;
     ysOpenGLDevice *m_device;

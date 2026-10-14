@@ -7,23 +7,15 @@
 #include "simulation_object.h"
 #include "ui_manager.h"
 #include "dynamometer.h"
-#include "oscilloscope.h"
 #include "audio_buffer.h"
 #include "convolution_filter.h"
 #include "shaders.h"
 #include "engine_view.h"
-#include "right_gauge_cluster.h"
-#include "cylinder_temperature_gauge.h"
 #include "synthesizer.h"
-#include "oscilloscope_cluster.h"
-#include "performance_cluster.h"
-#include "load_simulation_cluster.h"
-#include "mixer_cluster.h"
-#include "info_cluster.h"
-#include "console_overlay.h"
 #include "application_settings.h"
 #include "transmission.h"
 #include "updater.h"
+#include "ui/app_ui.h"
 
 #include "delta.h"
 #include "dtv.h"
@@ -81,6 +73,10 @@ class EngineSimApplication {
         const std::string &getThemeScriptPath() const { return m_themeScriptPath; }
         const std::string &getScriptLog() const { return m_scriptLog; }
         const Updater &getUpdater() const { return m_updater; }
+
+        // Checks for, downloads or installs an update depending on the
+        // updater's state
+        void requestUpdateAction();
         bool hasScriptErrors() const { return m_scriptErrors; }
 
         const std::string &getDataRoot() const { return m_dataRoot; }
@@ -129,8 +125,21 @@ class EngineSimApplication {
         int getScreenHeight() const { return m_screenHeight; }
 
         Simulator *getSimulator() { return m_simulator; }
-        InfoCluster *getInfoCluster() { return m_infoCluster; }
         ApplicationSettings* getAppSettings() { return &m_applicationSettings; }
+
+        // User interface support
+        AppUi &getUi() { return m_ui; }
+        void logMessage(const std::string &message) { m_ui.log(message); }
+        bool isPaused() const { return m_paused; }
+        void setPaused(bool paused);
+        double getDynoSpeed() const { return m_dynoSpeed; }
+        void setDynoSpeed(double speed) { m_dynoSpeed = speed; }
+        bool isFullscreen() const;
+        void setFullscreen(bool fullscreen);
+
+        // Applies the user preferences (settings page) that the application
+        // handles
+        void applyPreferences();
 
     protected:
         void loadScript();
@@ -190,7 +199,6 @@ class EngineSimApplication {
         Updater m_updater;
         bool m_checkForUpdates;
 
-        void processUpdateInput();
         std::string m_engineScriptPath;
         std::string m_themeScriptPath;
         std::string m_scriptLog;
@@ -216,15 +224,9 @@ class EngineSimApplication {
 
         UiManager m_uiManager;
         EngineView *m_engineView;
-        RightGaugeCluster *m_rightGaugeCluster;
-        OscilloscopeCluster *m_oscCluster;
-        CylinderTemperatureGauge *m_temperatureGauge;
-        PerformanceCluster *m_performanceCluster;
-        LoadSimulationCluster *m_loadSimulationCluster;
-        MixerCluster *m_mixerCluster;
-        InfoCluster *m_infoCluster;
-        ConsoleOverlay *m_console;
-        bool m_showConsole;
+        AppUi m_ui;
+        bool m_restartRequested = false;
+        float m_appliedVolume = -1.0f;
         SimulationObject::ViewParameters m_viewParameters;
 
         bool m_paused;
@@ -260,7 +262,6 @@ class EngineSimApplication {
         ysAudioSource *m_audioSource;
 
         int m_oscillatorSampleOffset;
-        int m_screen;
 
 #ifdef ATG_ENGINE_SIM_VIDEO_CAPTURE
         atg_dtv::Encoder m_encoder;

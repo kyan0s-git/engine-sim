@@ -140,6 +140,12 @@ class Engine : public Part {
         double getWallTemperature() const { return m_wallTemperature; }
         double getHeatTransferMultiplier() const { return m_heatTransferMultiplier; }
 
+        // Runtime adjustments (engineering model)
+        void setWallTemperature(double T);
+        void setHeatTransferMultiplier(double multiplier);
+        void setFrictionMultiplier(double multiplier) { m_friction.setMultiplier(multiplier); }
+        double getFrictionMultiplier() const { return m_friction.getParameters().multiplier; }
+
         // Geometric compression ratio (computed by calculateDisplacement())
         double getCompressionRatio() const { return m_compressionRatio; }
 

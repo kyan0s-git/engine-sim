@@ -343,6 +343,20 @@ void Engine::calculateDisplacement() {
         : 0.0;
 }
 
+void Engine::setWallTemperature(double T) {
+    m_wallTemperature = T;
+    for (int i = 0; i < m_cylinderCount; ++i) {
+        m_combustionChambers[i]->setWallTemperature(T);
+    }
+}
+
+void Engine::setHeatTransferMultiplier(double multiplier) {
+    m_heatTransferMultiplier = multiplier;
+    for (int i = 0; i < m_cylinderCount; ++i) {
+        m_combustionChambers[i]->setHeatTransferMultiplier(multiplier);
+    }
+}
+
 void Engine::initializeFriction() {
     calculateDisplacement();
 

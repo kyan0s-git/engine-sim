@@ -151,12 +151,30 @@ ysError ysOpenGLSdlContext::SetContext(ysRenderingContext *realContext) {
     return YDS_ERROR_RETURN(ysError::None);
 }
 
+namespace {
+    ysOpenGLSdlContext::PresentHook s_presentHook = nullptr;
+    void *s_presentHookUser = nullptr;
+}
+
+void ysOpenGLSdlContext::SetPresentHook(PresentHook hook, void *user) {
+    s_presentHook = hook;
+    s_presentHookUser = user;
+}
+
 ysError ysOpenGLSdlContext::Present() {
     YDS_ERROR_DECLARE("Present");
 
     ysSdlWindow *window = static_cast<ysSdlWindow *>(m_targetWindow);
     if (window == nullptr || window->GetSdlWindow() == nullptr) {
         return YDS_ERROR_RETURN(ysError::NoContext);
+    }
+
+    if (s_presentHook != nullptr) {
+        int width = 0, height = 0;
+        SDL_GL_GetDrawableSize(window->GetSdlWindow(), &width, &height);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, width, height);
+        s_presentHook(s_presentHookUser);
     }
 
     SDL_GL_SwapWindow(window->GetSdlWindow());

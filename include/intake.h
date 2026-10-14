@@ -62,6 +62,7 @@ class Intake : public Part {
         inline double getPlenumCrossSectionArea() const { return m_crossSectionArea; }
         inline double getVelocityDecay() const { return m_velocityDecay; }
         inline double getLambda() const { return m_lambda; }
+        inline void setLambda(double lambda) { m_lambda = (lambda > 0) ? lambda : 1.0; }
 
         // Temperature of the fresh charge after fuel evaporation [K]
         inline double getChargeTemperature() const { return m_chargeTemperature; }

@@ -389,8 +389,11 @@ void PistonEngineSimulator::endFrame() {
         return;
     }
 
+    // Frames without simulation steps (paused, or catching up with the
+    // audio) keep the previous flow rate instead of dividing by zero
     const double frameTimestep = simulationSteps() * getTimestep();
-    const int cylinderCount = m_engine->getCylinderCount();
+    if (frameTimestep <= 0) return;
+
     for (int i = 0; i < m_engine->getIntakeCount(); ++i) {
         m_engine->getIntake(i)->m_flowRate /= frameTimestep;
     }

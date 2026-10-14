@@ -44,6 +44,13 @@ class IgnitionModule : public Part {
 
         double getTimingAdvance();
 
+        // Added to the timing curve (positive = more advance) [rad]
+        void setTimingOffset(double offset) { m_timingOffset = offset; }
+        double getTimingOffset() const { return m_timingOffset; }
+
+        void setRevLimit(double revLimit) { m_revLimit = revLimit; }
+        double getRevLimit() const { return m_revLimit; }
+
         bool m_enabled;
 
     protected:
@@ -58,6 +65,7 @@ class IgnitionModule : public Part {
         double m_revLimit;
         double m_revLimitTimer;
         double m_limiterDuration;
+        double m_timingOffset = 0.0;
 };
 
 #endif /* ATG_ENGINE_SIM_IGNITION_MODULE_H */

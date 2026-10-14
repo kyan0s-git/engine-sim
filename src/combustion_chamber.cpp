@@ -613,6 +613,7 @@ void CombustionChamber::closeCycle() {
     CycleMetrics metrics;
     metrics.valid = true;
     metrics.cycleCount = m_lastCycle.cycleCount + 1;
+    metrics.firingTdcAngle = tdcAngle;
     metrics.grossWork = s[2].work + s[3].work;
     metrics.pumpingWork = s[0].work + s[1].work;
     metrics.netWork = metrics.grossWork + metrics.pumpingWork;

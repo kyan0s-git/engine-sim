@@ -83,6 +83,16 @@ ysSdlWindow *ysSdlWindowSystem::FindWindowFromId(uint32_t id) {
     return nullptr;
 }
 
+namespace {
+    ysSdlWindowSystem::EventHook s_eventHook = nullptr;
+    void *s_eventHookUser = nullptr;
+}
+
+void ysSdlWindowSystem::SetEventHook(EventHook hook, void *user) {
+    s_eventHook = hook;
+    s_eventHookUser = user;
+}
+
 void ysSdlWindowSystem::ProcessMessages() {
     ysSdlInputSystem *inputSystem = static_cast<ysSdlInputSystem *>(m_inputSystem);
     if (inputSystem != nullptr) {
@@ -91,6 +101,10 @@ void ysSdlWindowSystem::ProcessMessages() {
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        const bool captured = (s_eventHook != nullptr)
+            ? s_eventHook(event, s_eventHookUser)
+            : false;
+
         ysSdlWindow *target = nullptr;
         switch (event.type) {
             case SDL_QUIT:
@@ -138,6 +152,12 @@ void ysSdlWindowSystem::ProcessMessages() {
             case SDL_MOUSEBUTTONUP:
             case SDL_MOUSEWHEEL:
                 if (inputSystem == nullptr) break;
+                if (captured
+                    && event.type != SDL_KEYUP
+                    && event.type != SDL_MOUSEBUTTONUP)
+                {
+                    break;
+                }
 
                 {
                     // Every one of these events carries the window ID in the

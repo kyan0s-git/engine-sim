@@ -65,6 +65,7 @@ class Fuel {
         // Engineering physics model
         const thermo::FuelDefinition &getDefinition() const { return m_definition; }
         double getCombustionEfficiency() const { return m_combustionEfficiency; }
+        void setCombustionEfficiency(double efficiency) { m_combustionEfficiency = efficiency; }
         bool isKnownType() const { return m_knownType; }
 
         // Laminar burning velocity [m/s] for the equivalence ratio `phi`,

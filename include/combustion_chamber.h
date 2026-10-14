@@ -90,6 +90,8 @@ class CombustionChamber : public atg_scs::ForceGenerator {
             double fuelInducted = 0;        // [kg]
             double airInducted = 0;         // [kg]
             double heatLoss = 0;            // to the walls [J]
+
+            double firingTdcAngle = 0;      // crankshaft cycle angle [rad]
         };
 
         struct FrictionModelParams {
@@ -145,6 +147,9 @@ class CombustionChamber : public atg_scs::ForceGenerator {
         double getHeatTransferCoefficient() const { return m_currentHeatTransferCoefficient; }
 
         bool isEngineering() const { return m_engineering; }
+
+        void setWallTemperature(double T) { m_wallTemperature = T; }
+        void setHeatTransferMultiplier(double m) { m_heatTransferMultiplier = m; }
 
         void setRandomSeed(unsigned int seed);
 

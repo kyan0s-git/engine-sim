@@ -14,6 +14,8 @@ that the project builds with MSVC, GCC and Clang on Windows, Linux and macOS.
 | `csv-io/` | [ange-yaghi/csv-io](https://github.com/ange-yaghi/csv-io) | `2112c55` | MIT |
 | `direct-to-video/` | [ange-yaghi/direct-to-video](https://github.com/ange-yaghi/direct-to-video) | `19f939c` | Same author as the rest of the project |
 | `discord/` | [discord/discord-rpc](https://github.com/discord/discord-rpc) (prebuilt) | - | MIT |
+| `imgui/` | [ocornut/imgui](https://github.com/ocornut/imgui) | `v1.91.9b` | MIT |
+| `implot/` | [epezent/implot](https://github.com/epezent/implot) | `18c7243` | MIT |
 
 ## Local modifications
 
@@ -56,6 +58,17 @@ that the project builds with MSVC, GCC and Clang on Windows, Linux and macOS.
   member `free()` (i.e. `delete` on a `void *`); now uses
   `_aligned_malloc`/`_aligned_free` or `posix_memalign`/`free`.
 * Removed the demos, tests and documentation.
+
+* Hooks for an immediate-mode user interface: `ysSdlWindowSystem::SetEventHook()`
+  sees every SDL event first and can keep keyboard and mouse input away from
+  the input system, and `ysOpenGLSdlContext::SetPresentHook()` draws on top of
+  the frame right before it is presented.
+
+### imgui, implot
+
+* Only the library sources, the SDL2 and OpenGL 3 backends and the licenses;
+  no examples, documentation or other backends. Built with 32-bit draw
+  indices (`ImDrawIdx=unsigned int`) so that large plots fit in one draw list.
 
 ### simple-2d-constraint-solver, csv-io, direct-to-video
 

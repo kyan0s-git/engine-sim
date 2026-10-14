@@ -108,7 +108,7 @@ void IgnitionModule::resetIgnitionEvents() {
 }
 
 double IgnitionModule::getTimingAdvance() {
-    return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta);
+    return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta) + m_timingOffset;
 }
 
 IgnitionModule::SparkPlug *IgnitionModule::getPlug(int i) {

@@ -78,6 +78,7 @@ class EngineFriction {
         void initialize(const Parameters &params, const Geometry &geometry);
 
         Model getModel() const { return m_params.model; }
+        void setMultiplier(double multiplier) { m_params.multiplier = multiplier; }
         const Parameters &getParameters() const { return m_params; }
         const Geometry &getGeometry() const { return m_geometry; }
 

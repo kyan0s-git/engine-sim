@@ -47,6 +47,7 @@ namespace {
         double measure = 1.0;
         double frequency = 0;       // 0 = the engine's simulation frequency
         bool header = true;
+        bool perCylinder = false;
     };
 
     struct Loaded {
@@ -208,11 +209,12 @@ int main(int argc, char *argv[]) {
         else if (arg == "--measure") options.measure = next();
         else if (arg == "--frequency") options.frequency = next();
         else if (arg == "--no-header") options.header = false;
+        else if (arg == "--per-cylinder") options.perCylinder = true;
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--from <rpm>] [--to <rpm>] [--step <rpm>]\n"
                 "          [--throttle <0-1>] [--settle <s>] [--measure <s>] [--frequency <Hz>]\n"
-                "          [--no-header] <script.mr>\n",
+                "          [--no-header] [--per-cylinder] <script.mr>\n",
                 argv[0]);
             return 0;
         }
@@ -314,6 +316,19 @@ int main(int argc, char *argv[]) {
             m.sparkAdvance, m.ca10, m.ca50, m.ca90,
             m.peakPressure / bar, m.peakPressureAngle, m.peakTemperature, m.heatLossFraction);
         std::fflush(stdout);
+
+        if (options.perCylinder) {
+            // Last cycle of every cylinder (to stderr so the CSV stays clean)
+            for (int i = 0; i < engine->getCylinderCount(); ++i) {
+                const CombustionChamber::CycleMetrics &c = engine->getChamber(i)->getLastCycleMetrics();
+                std::fprintf(stderr,
+                    "  %5.0f rpm cyl %2d: imep %6.2f bar, spark %6.1f BTDC, CA50 %6.1f, pmax %6.1f bar @ %5.1f, VE %.3f\n",
+                    average.rpm, i + 1, c.imepNet / bar, c.sparkAdvance, c.ca50,
+                    c.peakPressure / bar, c.peakPressureAngle,
+                    c.airInducted / (SimulationAmbientPressure * thermo::air::molarMass
+                        / (constants::R * SimulationAmbientTemperature) * engine->getChamber(i)->getSweptVolume()));
+            }
+        }
     }
 
     simulator->endAudioRenderingThread();

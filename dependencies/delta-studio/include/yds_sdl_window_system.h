@@ -3,6 +3,8 @@
 
 #include "yds_window_system.h"
 
+#include <SDL.h>
+
 #include <cstdint>
 
 class ysSdlWindow;
@@ -21,6 +23,13 @@ public:
     virtual void SurveyMonitors() override;
 
     virtual void ProcessMessages() override;
+
+    // Called for every SDL event before it is processed. Returning true
+    // keeps keyboard and mouse events (other than key and button releases,
+    // so that nothing gets stuck) away from the input system; used by
+    // overlays such as an immediate-mode UI.
+    typedef bool (*EventHook)(const SDL_Event &event, void *user);
+    static void SetEventHook(EventHook hook, void *user);
 
     virtual void ConfineCursor(ysWindow *window) override;
     virtual void ReleaseCursor() override;

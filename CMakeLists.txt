@@ -81,6 +81,7 @@ add_library(engine-sim STATIC
     src/drivetrain_spring.cpp
     src/dynamometer.cpp
     src/engine.cpp
+    src/engine_design.cpp
     src/engine_friction.cpp
     src/engine_metrics.cpp
     src/exhaust_system.cpp
@@ -112,6 +113,7 @@ add_library(engine-sim STATIC
     src/throttle.cpp
     src/transmission.cpp
     src/updater.cpp
+    src/user_preferences.cpp
     src/utilities.cpp
     src/valvetrain.cpp
     src/vehicle.cpp
@@ -134,6 +136,7 @@ add_library(engine-sim STATIC
     include/drivetrain_spring.h
     include/dynamometer.h
     include/engine.h
+    include/engine_design.h
     include/engine_friction.h
     include/engine_metrics.h
     include/exhaust_system.h
@@ -166,6 +169,7 @@ add_library(engine-sim STATIC
     include/transmission.h
     include/updater.h
     include/units.h
+    include/user_preferences.h
     include/utilities.h
     include/valvetrain.h
     include/vehicle.h
@@ -262,32 +266,17 @@ if (ENGINE_SIM_BUILD_APP)
         src/connecting_rod_object.cpp
         src/ui_element.cpp
         src/ui_manager.cpp
-        src/cylinder_pressure_gauge.cpp
         src/ui_math.cpp
-        src/gauge.cpp
         src/crankshaft_object.cpp
         src/cylinder_bank_object.cpp
         src/cylinder_head_object.cpp
-        src/ui_button.cpp
         src/ui_utilities.cpp
         src/combustion_chamber_object.cpp
-        src/console_overlay.cpp
         src/wankel_rotor_object.cpp
-        src/oscilloscope.cpp
         src/shaders.cpp
         src/engine_view.cpp
-        src/right_gauge_cluster.cpp
-        src/cylinder_temperature_gauge.cpp
-        src/labeled_gauge.cpp
-        src/throttle_display.cpp
-        src/afr_cluster.cpp
-        src/fuel_cluster.cpp
-        src/oscilloscope_cluster.cpp
-        src/performance_cluster.cpp
-        src/firing_order_display.cpp
-        src/load_simulation_cluster.cpp
-        src/mixer_cluster.cpp
-        src/info_cluster.cpp
+        src/ui/app_ui.cpp
+        src/ui/ui_widgets.cpp
 
         # Include files
         include/delta.h
@@ -299,36 +288,23 @@ if (ENGINE_SIM_BUILD_APP)
         include/connecting_rod_object.h
         include/ui_element.h
         include/ui_manager.h
-        include/cylinder_pressure_gauge.h
         include/ui_math.h
         include/crankshaft_object.h
         include/cylinder_bank_object.h
         include/cylinder_head_object.h
-        include/ui_button.h
         include/ui_utilities.h
         include/combustion_chamber_object.h
-        include/console_overlay.h
         include/wankel_rotor_object.h
-        include/oscilloscope.h
         include/shaders.h
         include/engine_view.h
-        include/right_gauge_cluster.h
-        include/cylinder_temperature_gauge.h
-        include/labeled_gauge.h
-        include/throttle_display.h
-        include/afr_cluster.h
-        include/fuel_cluster.h
-        include/oscilloscope_cluster.h
-        include/performance_cluster.h
-        include/firing_order_display.h
-        include/load_simulation_cluster.h
-        include/mixer_cluster.h
-        include/info_cluster.h
+        include/ui/app_ui.h
+        include/ui/ui_widgets.h
     )
 
     target_link_libraries(engine-sim-app PRIVATE
         engine-sim
-        delta-basic)
+        delta-basic
+        imgui)
 
     if (WIN32)
         # SDL2main provides WinMain when building a GUI subsystem executable
@@ -464,6 +440,7 @@ if (ENGINE_SIM_BUILD_TESTS)
 
     add_executable(engine-sim-test
         test/gas_system_tests.cpp
+        test/engine_design_tests.cpp
         test/engine_model_tests.cpp
         test/function_test.cpp
         test/synthesizer_tests.cpp
