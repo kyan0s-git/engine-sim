@@ -70,6 +70,7 @@ class AppUi {
 
         Controls &controls() { return m_controls; }
         UserPreferences &preferences() { return m_preferences; }
+        const UserPreferences &preferencesConst() const { return m_preferences; }
         void savePreferences();
 
         void log(const std::string &message);

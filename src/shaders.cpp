@@ -98,6 +98,26 @@ void Shaders::SetBaseColor(const ysVector &color) {
 
 void Shaders::ResetBaseColor() {
     m_objectVariables.BaseColor = ysMath::LoadVector(1.0f, 1.0f, 1.0f, 1.0f);
+    m_objectVariables.Lit = 0;
+    m_objectVariables.Emission = ysMath::LoadVector(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+void Shaders::SetSurface(Surface surface, const SurfaceParameters &params) {
+    m_objectVariables.Lit = static_cast<int>(surface);
+    m_objectVariables.SpecularMix = params.highlight;
+    m_objectVariables.SpecularPower = params.shininess;
+    m_objectVariables.Metallic = params.metallic;
+    m_objectVariables.DiffuseMix = params.grain;
+    m_objectVariables.IncidentSpecular = params.grainDensity;
+    m_objectVariables.DiffuseRoughness = params.halfWidth;
+}
+
+void Shaders::SetSurface(Surface surface) {
+    SetSurface(surface, SurfaceParameters());
+}
+
+void Shaders::SetEmission(const ysVector &emission) {
+    m_objectVariables.Emission = emission;
 }
 
 dbasic::StageEnableFlags Shaders::GetRegularFlags() const {

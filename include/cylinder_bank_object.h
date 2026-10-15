@@ -20,6 +20,7 @@ class CylinderBankObject : public SimulationObject {
         CylinderBank *m_bank;
         CylinderHead *m_head;
         GeometryGenerator::GeometryIndices m_walls;
+        GeometryGenerator::GeometryIndices m_liner;
 };
 
 #endif /* ATG_ENGINE_SIM_CYLINDER_BANK_OBJECT_H */

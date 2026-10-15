@@ -503,8 +503,13 @@ void EngineSimApplication::initialize() {
 void EngineSimApplication::process(double elapsed) {
     m_simulator->setSimulationSpeed(m_requestedSimulationSpeed);
 
-    // The simulator limits how much it catches up after a stall
+    // The simulator limits how much it catches up after a stall. Each slice
+    // is also kept to about 8 ms of work so that the main thread (which
+    // waits for the lock) stays responsive when the physics can't keep up.
     m_simulator->startFrame(elapsed);
+    if (m_timePerStepEstimate > 0) {
+        m_simulator->limitFrameSteps(static_cast<int>(0.008 / m_timePerStepEstimate));
+    }
 
     auto proc_t0 = std::chrono::steady_clock::now();
     const int iterationCount = m_simulator->getFrameIterationCount();
@@ -520,6 +525,11 @@ void EngineSimApplication::process(double elapsed) {
     const double timePerStep = (iterationCount > 0)
         ? duration.count() / iterationCount
         : 0.0;
+    if (iterationCount >= 10) {
+        m_timePerStepEstimate = (m_timePerStepEstimate > 0)
+            ? 0.9 * m_timePerStepEstimate + 0.1 * timePerStep
+            : timePerStep;
+    }
 
     // Keep enough audio queued in the output buffer to cover the longest
     // recent gap between slices; a fixed 100 ms ran dry whenever frames took
@@ -610,6 +620,7 @@ void EngineSimApplication::render() {
         object->render(&getViewParameters());
     }
 
+    m_shaders.ResetBaseColor();
     m_uiManager.render();
 }
 
@@ -647,7 +658,9 @@ void EngineSimApplication::run() {
         // Everything up to the engine view's geometry reads or changes the
         // engine, so the simulation thread waits meanwhile
         const Clock::time_point tw = Clock::now();
+        m_mainThreadWaiting = true;
         std::unique_lock<std::mutex> lock(m_simulationLock);
+        m_mainThreadWaiting = false;
         const Clock::time_point t0 = Clock::now();
         profile.simulation = seconds(tw, t0);
 
@@ -851,6 +864,75 @@ void EngineSimApplication::run() {
     m_ui.savePreferences();
 }
 
+bool EngineSimApplication::isRealisticView() const {
+    return m_ui.preferencesConst().engineViewStyle != "classic";
+}
+
+ysVector EngineSimApplication::materialColor(Material material, const ysVector &classic) const {
+    if (!isRealisticView()) return classic;
+
+    int srgb = 0x8c939c;
+    switch (material) {
+    case Material::Block: srgb = 0x4b525c; break;          // cast iron
+    case Material::Liner: srgb = 0x3a3f46; break;
+    case Material::Head: srgb = 0x8f979f; break;           // cast aluminium
+    case Material::Piston: srgb = 0xc3c8ce; break;         // machined aluminium
+    case Material::Rod: srgb = 0x9aa0a8; break;            // forged steel
+    case Material::Crank: srgb = 0x7a8089; break;          // steel
+    case Material::CrankSnout: srgb = 0x5d636b; break;
+    case Material::Pin: srgb = 0xd7dbe0; break;            // polished steel
+    case Material::IntakeValve: srgb = 0xa9b0b8; break;
+    case Material::ExhaustValve: srgb = 0xa9805a; break;   // heat tinted
+    case Material::Cam: srgb = 0x7f868f; break;
+    case Material::Rotor: srgb = 0xa0a6ad; break;
+    case Material::Housing: srgb = 0x555c66; break;
+    }
+
+    return ysColor::srgbiToLinear(static_cast<unsigned int>(srgb), ysMath::GetW(classic));
+}
+
+void EngineSimApplication::useMaterial(Material material, Shaders::Surface surface, float halfWidth, bool generated) {
+    if (!isRealisticView()) {
+        m_shaders.SetSurface(Shaders::Surface::Flat);
+        return;
+    }
+
+    Shaders::SurfaceParameters params;
+    params.halfWidth = halfWidth;
+    switch (material) {
+    case Material::Block:
+    case Material::Liner:
+    case Material::Housing:
+        params.highlight = 0.05f; params.metallic = 0.2f; params.grain = 0.10f; params.grainDensity = 1500.0f;
+        break;
+    case Material::Head:
+        params.highlight = 0.12f; params.metallic = 0.4f; params.grain = 0.06f; params.grainDensity = 40.0f;
+        break;
+    case Material::Piston:
+        params.highlight = 0.45f; params.shininess = 18.0f; params.metallic = 0.5f; params.grain = 0.03f; params.grainDensity = 60.0f;
+        break;
+    case Material::Pin:
+        params.highlight = 0.8f; params.shininess = 40.0f; params.metallic = 0.3f; params.grain = 0.0f;
+        break;
+    case Material::Rod:
+    case Material::Crank:
+    case Material::CrankSnout:
+    case Material::Cam:
+    case Material::Rotor:
+        params.highlight = 0.4f; params.shininess = 28.0f; params.metallic = 0.7f; params.grain = 0.03f; params.grainDensity = 60.0f;
+        break;
+    case Material::IntakeValve:
+    case Material::ExhaustValve:
+        params.highlight = 0.5f; params.shininess = 30.0f; params.metallic = 0.6f; params.grain = 0.0f;
+        break;
+    }
+
+    // Generated geometry is in metres: finer grain cells
+    if (generated) params.grainDensity = 1500.0f;
+
+    m_shaders.SetSurface(surface, params);
+}
+
 void EngineSimApplication::startSimulationThread() {
     if (m_simulationRunning) return;
 
@@ -892,11 +974,21 @@ void EngineSimApplication::simulationThread() {
             }
         }
 
-        // Leave the lock to the main thread for a moment even when the
-        // simulation can't keep up
+        // Hand the lock to the main thread if it is waiting (the mutex isn't
+        // fair); otherwise carry on at once when the simulation is behind
+        if (m_mainThreadWaiting) {
+            const Clock::time_point waitStart = Clock::now();
+            while (m_mainThreadWaiting && m_simulationRunning
+                && std::chrono::duration<double>(Clock::now() - waitStart).count() < 0.05)
+            {
+                std::this_thread::yield();
+            }
+        }
+
         const double work = std::chrono::duration<double>(Clock::now() - start).count();
-        const double rest = std::max(SlicePeriod - work, 0.0005);
-        std::this_thread::sleep_for(std::chrono::duration<double>(rest));
+        if (work < SlicePeriod) {
+            std::this_thread::sleep_for(std::chrono::duration<double>(SlicePeriod - work));
+        }
     }
 }
 
@@ -1008,6 +1100,8 @@ void EngineSimApplication::loadEngine(
     Vehicle *vehicle,
     Transmission *transmission)
 {
+    m_timePerStepEstimate = 0;
+
     destroyObjects();
 
     if (m_simulator != nullptr) {

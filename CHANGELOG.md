@@ -4,6 +4,62 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
+## [0.4.0] - 2026-10-15
+
+### Turbochargers and superchargers
+- Single, twin and sequential turbochargers and Roots, twin-screw and
+  centrifugal superchargers. The compressor fills a charge-air volume that
+  the throttle draws from; turbines are driven by the exhaust and spool up
+  (turbo lag comes from the exhaust energy available); superchargers load
+  the crankshaft with their drive power.
+- Wastegate, blow-off valve, supercharger bypass valve and intercooler.
+- Compressor whine and blow-off noise in the sound; turbines muffle the
+  exhaust a little.
+- Boost gauge, turbo speed, wastegate and charge air temperatures in the
+  instruments; boost, drive ratio, intercooler and blow-off valve in the
+  tuning window.
+- Script nodes `turbocharger()`, `supercharger()` and
+  `add_forced_induction()`; the dyno tool prints the boost, turbo speed and
+  exhaust pressure at every point.
+
+### Engine designer and library
+- New layouts: W engines (two narrow-angle V's or three banks) and rotary
+  (Wankel) engines with one to four rotors and port timing.
+- Firing orders can be entered; the valvetrain type, the exhaust sound and
+  forced induction are part of a design.
+- Engine library (Ctrl+L): presets of the Honda K24, GM LS3, Toyota
+  2JZ-GTE, BMW B58, the 2026 Formula 1 V6, Chevrolet small-block 350,
+  Chrysler 426 Hemi, Mazda 13B-REW, Porsche M97.74 and a Volkswagen W12,
+  to load as they are or customize; saved engines can be loaded, edited,
+  duplicated and deleted. *Save as* in the designer.
+- The script checker can validate the presets (`--presets`), which CI now
+  does.
+
+### Performance
+- The simulation runs on its own thread, so the frame rate no longer drops
+  with the cost of the physics. On a slow test machine the frame rate went
+  from 8 to 18-22 fps and audio dropouts from 11 per run to none.
+- The simulation speed no longer jitters from frame to frame (the audio
+  queue was corrected by half of its error every frame).
+- When the physics can't keep up the simulation catches up in short slices
+  instead of freezing the interface for up to 200 ms.
+- The Performance tab breaks the frame time down (interface, waiting for
+  the simulation, engine view, presenting); `ENGINE_SIM_PROFILE=1` logs it.
+
+### Engine view
+- Realistic style (default): machined aluminium pistons, steel rods and
+  crank with turned faces, polished pins, a honed cylinder bore, heat-tinted
+  exhaust valves and an iron block, shaded per pixel from the flat 2D
+  parts. The classic flat theme colors remain available (Settings > Display
+  or View > Realistic engine view).
+- The front rotor of a rotary engine was drawn behind the rear one.
+
+### Fixes
+- Ctrl+, (Cmd+, on macOS) opens the settings wherever the focus is; it only
+  worked while an interface window had focus.
+- Shader programs were destroyed after their shaders at exit (use after
+  free).
+
 ## [0.3.1] - 2026-10-14
 
 ### Audio

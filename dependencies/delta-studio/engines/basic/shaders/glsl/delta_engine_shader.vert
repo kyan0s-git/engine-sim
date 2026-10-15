@@ -7,6 +7,7 @@ layout(location=2) in vec4 in_Normal;
 out vec4 ex_Pos;
 out vec2 ex_Tex;
 out vec3 ex_Normal;
+out vec2 ex_Local;
 
 layout (binding = 0) uniform ScreenVariables {
 	mat4 CameraView;
@@ -43,6 +44,7 @@ layout (binding = 2) uniform SkinningVariables {
 
 void main(void) {
 	vec4 inputPos = vec4(in_Position.xyz, 1.0);
+	ex_Local = in_Position.xy;
 
 	inputPos.xyz *= Scale.xyz;
 

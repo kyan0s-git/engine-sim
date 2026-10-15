@@ -12,6 +12,7 @@
 #include "delay_filter.h"
 #include "engine.h"
 
+#include <algorithm>
 #include <chrono>
 
 class Simulator {
@@ -69,6 +70,10 @@ public:
     double getSynthesizerInputLatencyTarget() const;
 
     void setSimulationSpeed(double simSpeed) { m_simulationSpeed = simSpeed; }
+
+    // Caps the steps of the frame started by startFrame() (the time left
+    // out is made up by later frames)
+    void limitFrameSteps(int maxSteps) { m_steps = (std::min)(m_steps, (std::max)(maxSteps, 1)); }
     double getSimulationSpeed() const { return m_simulationSpeed; }
     int getCurrentIteration() const { return m_currentIteration; }
     double getAverageProcessingTime() const { return m_physicsProcessingTime; }

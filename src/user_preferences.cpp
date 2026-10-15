@@ -32,6 +32,7 @@ bool UserPreferences::load(const std::string &path) {
         else if (key == "ui_scale") uiScale = std::clamp((float)std::atof(value.c_str()), 0.5f, 3.0f);
         else if (key == "ui_theme") uiTheme = value;
         else if (key == "show_engine_view_frame") showEngineViewFrame = parseBool(value);
+        else if (key == "engine_view_style") engineViewStyle = (value == "classic") ? "classic" : "realistic";
         else if (key == "power_units") powerUnits = value;
         else if (key == "torque_units") torqueUnits = value;
         else if (key == "speed_units") speedUnits = value;
@@ -58,6 +59,7 @@ bool UserPreferences::save(const std::string &path) const {
         << "ui_scale=" << uiScale << "\n"
         << "ui_theme=" << uiTheme << "\n"
         << "show_engine_view_frame=" << (showEngineViewFrame ? 1 : 0) << "\n"
+        << "engine_view_style=" << engineViewStyle << "\n"
         << "power_units=" << powerUnits << "\n"
         << "torque_units=" << torqueUnits << "\n"
         << "speed_units=" << speedUnits << "\n"

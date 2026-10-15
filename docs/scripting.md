@@ -202,6 +202,60 @@ transmission(
 
 `vehicle` also accepts the tire, wheelbase and weight transfer inputs used by newer versions of Engine Simulator so that their scripts load, but they don't affect this simulation.
 
+## Turbochargers and superchargers
+
+Add one compressor to an engine with `add_forced_induction()`. It feeds
+every intake of the engine; a turbocharger's turbine sits at the outlet of
+every exhaust system.
+
+```
+engine.add_forced_induction(
+    turbocharger(
+        arrangement: "single",              // "single", "twin" or "sequential"
+        compressor_diameter: 60 * units.mm, // impeller tip diameter
+        compressor_flow: 0.3 * units.kg / units.sec,  // maximum flow per turbo
+        turbine_ar: 0.64,                   // smaller housings spool sooner
+        bearings: "journal",                // or "ball"
+        boost: 1.0 * units.bar,             // wastegate set point (gauge)
+        blowoff_valve: true,
+        intercooler_effectiveness: 0.7,
+        charge_volume: 6.0 * units.L,       // pipes and intercooler
+        sequential_speed: 4000 * units.rpm  // second turbo of a sequential pair
+    )
+)
+
+engine.add_forced_induction(
+    supercharger(
+        type: "roots",                      // "roots", "twin_screw" or "centrifugal"
+        drive_ratio: 2.2,                   // compressor speed / crankshaft speed
+        displacement: 1.9 * units.L,        // per rotor revolution (roots, twin_screw)
+        compressor_diameter: 90 * units.mm, // impeller (centrifugal)
+        compressor_flow: 0.5 * units.kg / units.sec,  // (centrifugal)
+        bypass_valve: true,                 // recirculates at part throttle
+        intercooler_effectiveness: 0.0
+    )
+)
+```
+
+The model in brief:
+
+- Centrifugal compressors (turbochargers, centrifugal superchargers) are a
+  pressure source that follows the impeller's tip speed (Euler work) behind
+  a restriction sized from `compressor_flow`; they absorb `sigma * U^2` of
+  work per kilogram of air.
+- Positive displacement superchargers deliver their displacement every
+  revolution, minus the leakage back through the rotor clearances (Roots
+  more than twin-screw), and heat the air with their efficiency (55% and 72%).
+- The turbine extracts the isentropic work of the exhaust leaving through
+  it; the turbo shaft's speed follows from its kinetic energy (turbine power
+  minus compressor and bearing power), so turbo lag emerges from the exhaust
+  energy available.
+- The wastegate opens over the last 15% below the boost set point. The
+  blow-off valve opens when the charge pressure exceeds the manifold
+  pressure by about 4 psi.
+- Knock is not simulated: lower the compression ratio and the ignition
+  advance of boosted engines yourself.
+
 ## Rotary (Wankel) engines
 
 Rotary engines are built with `wankel_engine` and `add_rotor`. `assets/engines/rotary/two_rotor_13b.mr` is a complete example.

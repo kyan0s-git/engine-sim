@@ -34,6 +34,17 @@ void CylinderBankObject::generateGeometry() {
         (float)(m_bank->getY() + m_bank->getDy() * (displayDepth * m_bank->getDeckHeight()));
 
     GeometryGenerator::Line2dParameters params;
+
+    // Bore (drawn behind the pistons in the realistic view)
+    params.lineWidth = (float)(m_bank->getBore() + 2 * margin);
+    params.x0 = top_x;
+    params.y0 = top_y;
+    params.x1 = bottom_x;
+    params.y1 = bottom_y;
+    gen->startShape();
+    gen->generateLine2d(params);
+    gen->endShape(&m_liner);
+
     params.lineWidth = lineWidth;
 
     GeometryGenerator::Circle2dParameters circleParams;
@@ -75,7 +86,16 @@ void CylinderBankObject::render(const ViewParameters *view) {
         ysMath::Mul(m_app->getBackgroundColor(), ysMath::LoadScalar(0.99f))
     );
 
-    m_app->getShaders()->SetBaseColor(m_app->getPink());
+    if (m_app->isRealisticView()) {
+        m_app->getShaders()->SetBaseColor(
+            tintByLayer(m_app->materialColor(EngineSimApplication::Material::Liner, m_app->getPink()), 1));
+        m_app->useMaterial(EngineSimApplication::Material::Liner, Shaders::Surface::Liner, 1.0f, true);
+        m_app->drawGenerated(m_liner, 0x0);
+    }
+
+    m_app->getShaders()->SetBaseColor(
+        m_app->materialColor(EngineSimApplication::Material::Block, m_app->getPink()));
+    m_app->useMaterial(EngineSimApplication::Material::Block, Shaders::Surface::Plate, 1.0f, true);
     m_app->drawGenerated(m_walls, 0x0);
 }
 

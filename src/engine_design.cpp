@@ -621,7 +621,7 @@ bool EngineDesign::validate() {
     generatingRadius = std::clamp(generatingRadius, 4.0 * eccentricity, 12.0 * eccentricity);
     rotorWidth = std::clamp(rotorWidth, 0.02, 0.2);
     intakeOpen = std::clamp(intakeOpen, -60 * Deg, 80 * Deg);
-    intakeClose = std::clamp(intakeClose, std::max(0.0, 95 * Deg - intakeOpen), 120 * Deg);
+    intakeClose = std::clamp(intakeClose, std::min(std::max(0.0, 95 * Deg - intakeOpen), 120 * Deg), 120 * Deg);
     exhaustOpen = std::clamp(exhaustOpen, 30 * Deg, 120 * Deg);
     exhaustClose = std::clamp(exhaustClose, std::max(-30 * Deg, 95 * Deg - exhaustOpen), 80 * Deg);
 

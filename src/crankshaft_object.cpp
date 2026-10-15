@@ -19,9 +19,13 @@ void CrankshaftObject::generateGeometry() {
 void CrankshaftObject::render(const ViewParameters *view) {
     if (view->Sublayer != 2) return;
 
-    const ysVector grey0 = mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.7f);
-    const ysVector grey1 = mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.6f);
-    const ysVector grey2 = mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.2f);
+    using Material = EngineSimApplication::Material;
+    const ysVector grey0 = m_app->materialColor(Material::Crank,
+        mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.7f));
+    const ysVector grey1 = m_app->materialColor(Material::Pin,
+        mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.6f));
+    const ysVector grey2 = m_app->materialColor(Material::CrankSnout,
+        mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.2f));
 
     const int journalCount = m_crankshaft->getRodJournalCount();
     for (int i = 0; i < journalCount; ++i) {
@@ -39,6 +43,7 @@ void CrankshaftObject::render(const ViewParameters *view) {
             (float)m_crankshaft->getRodJournalAngle(i));
 
         m_app->getShaders()->SetBaseColor(col);
+        m_app->useMaterial(Material::Crank, Shaders::Surface::Turned, 3.0f);
         m_app->getEngine()->DrawModel(
             m_app->getShaders()->GetRegularFlags(),
             m_app->getAssetManager()->GetModelAsset("Crankshaft"),
@@ -52,6 +57,7 @@ void CrankshaftObject::render(const ViewParameters *view) {
         0.0f,
         0.0f);
     m_app->getShaders()->SetBaseColor(grey1);
+    m_app->useMaterial(Material::Crank, Shaders::Surface::Metal);
     m_app->getEngine()->DrawModel(
         m_app->getShaders()->GetRegularFlags(),
         m_app->getAssetManager()->GetModelAsset("CrankSnout"),

@@ -110,6 +110,17 @@ class EngineSimApplication {
         float pixelsToUnits(float pixels) const;
         float unitsToPixels(float units) const;
 
+        // Engine view materials: the realistic style uses metal colors and
+        // shading, the classic style the theme's flat colors
+        enum class Material {
+            Block, Liner, Head, Piston, Rod, Crank, CrankSnout, Pin, IntakeValve, ExhaustValve, Cam, Rotor, Housing
+        };
+        bool isRealisticView() const;
+        ysVector materialColor(Material material, const ysVector &classic) const;
+        // Models are drawn in normalized units, generated shapes in metres
+        // (sets the scale of the surface grain)
+        void useMaterial(Material material, Shaders::Surface surface, float halfWidth = 1.0f, bool generated = false);
+
         ysVector getBackgroundColor() const { return m_background; }
         ysVector getForegroundColor() const { return m_foreground; }
         ysVector getHightlight1Color() const { return m_highlight1; }
@@ -244,7 +255,9 @@ class EngineSimApplication {
         std::mutex m_simulationLock;
         std::thread m_simulationThread;
         std::atomic<bool> m_simulationRunning{ false };
+        std::atomic<bool> m_mainThreadWaiting{ false };
         bool m_stepRequested = false;
+        double m_timePerStepEstimate = 0;   // [s]
         double m_requestedSimulationSpeed = 1.0;
         float m_appliedVolume = -1.0f;
         SimulationObject::ViewParameters m_viewParameters;

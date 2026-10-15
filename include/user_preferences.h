@@ -13,6 +13,10 @@ struct UserPreferences {
     std::string uiTheme = "dark";           // dark, light, classic
     bool showEngineViewFrame = false;
 
+    // Engine view: "realistic" (shaded metal parts) or "classic" (flat theme
+    // colors)
+    std::string engineViewStyle = "realistic";
+
     // Units ("" = use the theme's units)
     std::string powerUnits;                 // hp, kW
     std::string torqueUnits;                // lb-ft, Nm

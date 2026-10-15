@@ -66,10 +66,17 @@ void ConnectingRodObject::render(const ViewParameters *view) {
     const ysVector grey1 = mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.8667f);
     const ysVector grey2 = mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.05f);
 
+    using Material = EngineSimApplication::Material;
     ysVector color =
         (m_connectingRod->getPiston()->getCylinderBank()->getIndex() % 2 == 0)
         ? grey0
         : grey1;
+    if (m_app->isRealisticView()) {
+        color = m_app->materialColor(Material::Rod, color);
+        if (m_connectingRod->getPiston()->getCylinderBank()->getIndex() % 2 != 0) {
+            color = ysMath::Mul(color, ysMath::LoadVector(0.9f, 0.9f, 0.9f, 1.0f));
+        }
+    }
     color = tintByLayer(color, layer - view->Layer0);
 
     resetShader();
@@ -80,20 +87,23 @@ void ConnectingRodObject::render(const ViewParameters *view) {
         (float)m_connectingRod->getBigEndLocal());
 
     m_app->getShaders()->SetBaseColor(color);
+    m_app->useMaterial(Material::Rod, Shaders::Surface::Metal);
     m_app->getEngine()->DrawModel(
         m_app->getShaders()->GetRegularFlags(),
         m_app->getAssetManager()->GetModelAsset("ConnectingRod"),
         0x32 - layer);
 
     m_app->getShaders()->SetBaseColor(color);
+    m_app->useMaterial(Material::Rod, Shaders::Surface::Bar, 1.0f, true);
     setTransform(&m_connectingRod->m_body);
     m_app->drawGenerated(m_connectingRodBody, 0x32 - layer);
 
     if (m_connectingRod->getRodJournalCount() > 0) {
         const ysVector shadow =
-            tintByLayer(grey2, layer - view->Layer0);
+            tintByLayer(m_app->materialColor(Material::Pin, grey2), layer - view->Layer0);
 
         m_app->getShaders()->SetBaseColor(shadow);
+        m_app->useMaterial(Material::Pin, Shaders::Surface::Journal, 1.0f, true);
         m_app->drawGenerated(m_pins, 0x32 - layer);
     }
 }

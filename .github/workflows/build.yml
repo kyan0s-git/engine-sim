@@ -70,7 +70,8 @@ jobs:
         # files are part libraries, not engines)
         run: |
           ./build/engine-sim-script-check --data . --require-running assets/main.mr assets/themes/*.mr \
-            $(find assets/engines -name '*.mr' ! -name 'radial.mr' | sort)
+            $(find assets/engines -name '*.mr' ! -name 'radial.mr' | sort) \
+            --presets build/presets
 
       - name: Engineering dyno sweep
         if: runner.os != 'Windows'

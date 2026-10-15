@@ -9,6 +9,7 @@
 // compiled and their unit names validated.
 
 #include "../include/engine.h"
+#include "../include/engine_design.h"
 #include "../include/simulator.h"
 #include "../include/transmission.h"
 #include "../include/vehicle.h"
@@ -18,6 +19,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <cstdlib>
 #include <filesystem>
 #include <initializer_list>
@@ -239,9 +241,21 @@ int main(int argc, char *argv[]) {
         else if (arg == "--require-running") options.requireRunning = true;
         else if (arg == "--trace") options.trace = true;
         else if (arg == "--crank" && i + 1 < argc) options.crankSeconds = std::atof(argv[++i]);
+        else if (arg == "--presets" && i + 1 < argc) {
+            // Writes the designer's built-in presets to a folder and checks them
+            const fs::path directory = argv[++i];
+            std::error_code ec;
+            fs::create_directories(directory, ec);
+            for (const EngineDesign &preset : builtinEnginePresets()) {
+                const fs::path path = directory / (designFileName(preset.name) + ".mr");
+                std::ofstream(path) << generateEngineScript(preset);
+                options.scripts.push_back(path.string());
+            }
+        }
         else if (arg == "--help" || arg == "-h") {
             std::printf(
-                "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] [--crank <s>] [--trace] <script.mr>...\n",
+                "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] [--crank <s>] [--trace]\n"
+                "          [--presets <output dir>] <script.mr>...\n",
                 argv[0]);
             return 0;
         }

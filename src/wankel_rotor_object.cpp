@@ -168,8 +168,11 @@ void WankelRotorObject::render(const ViewParameters *view) {
     resetShader();
 
     if (view->Sublayer == 0) {
-        m_app->getShaders()->SetBaseColor(tintByLayer(m_app->getPink(), depth));
+        using Material = EngineSimApplication::Material;
+        m_app->getShaders()->SetBaseColor(tintByLayer(m_app->materialColor(Material::Housing, m_app->getPink()), depth));
+        m_app->useMaterial(Material::Housing, Shaders::Surface::Plate, 1.0f, true);
         m_app->drawGenerated(m_housing, 0x0);
+        m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
 
         m_app->getShaders()->SetBaseColor(tintByLayer(m_app->getBlue(), depth));
         m_app->drawGenerated(m_intakePort, 0x0);
@@ -181,11 +184,14 @@ void WankelRotorObject::render(const ViewParameters *view) {
         m_app->drawGenerated(m_sparkPlug, 0x0);
     }
     else if (view->Sublayer == 1) {
+        using Material = EngineSimApplication::Material;
         const ysVector rotorColor = tintByLayer(
-            mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.4f),
+            m_app->materialColor(Material::Rotor, mix(m_app->getBackgroundColor(), m_app->getForegroundColor(), 0.4f)),
             depth);
         m_app->getShaders()->SetBaseColor(rotorColor);
-        m_app->drawGenerated(m_rotorBody, 0x10 + layer);
+        m_app->useMaterial(Material::Rotor, Shaders::Surface::Metal, 1.0f, true);
+        m_app->drawGenerated(m_rotorBody, 0x20 - layer);
+        m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
 
         // Only show the flame of the frontmost rotor
         if (depth == 0) {

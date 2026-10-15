@@ -1053,6 +1053,12 @@ void AppUi::buildMenuBar() {
             m_preferencesDirty = true;
         }
 
+        bool realistic = (m_preferences.engineViewStyle != "classic");
+        if (ImGui::MenuItem("Realistic engine view", nullptr, &realistic)) {
+            m_preferences.engineViewStyle = realistic ? "realistic" : "classic";
+            m_preferencesDirty = true;
+        }
+
         if (m_engine != nullptr) {
             int layer = m_app->getViewParameters().Layer0;
             ImGui::SetNextItemWidth(160 * m_preferences.uiScale);
@@ -2098,6 +2104,15 @@ void AppUi::buildSettingsWindow() {
                 for (int i = 0; i < 3; ++i) if (p.uiTheme == themes[i]) index = i;
                 if (ImGui::Combo("##theme", &index, names, 3)) { p.uiTheme = themes[index]; changed = true; }
             }
+            label("Engine view");
+            {
+                int realistic = (p.engineViewStyle == "classic") ? 1 : 0;
+                const char *styles[] = { "Realistic (shaded metal)", "Classic (flat theme colors)" };
+                if (ImGui::Combo("##viewstyle", &realistic, styles, 2)) {
+                    p.engineViewStyle = realistic ? "classic" : "realistic";
+                    changed = true;
+                }
+            }
             label("Frame around the engine view");
             if (ImGui::Checkbox("##frame", &p.showEngineViewFrame)) changed = true;
             ImGui::EndTabItem();
@@ -2637,7 +2652,7 @@ void AppUi::buildDesignerWindow() {
                 label("Opens (before TDC)");
                 sliderDouble("##io", &d.intakeOpen, -40 * Deg, 60 * Deg, "%.0f deg", 1.0 / Deg);
                 label("Closes (after BDC)");
-                sliderDouble("##ic", &d.intakeClose, std::max(0.0, 95 * Deg - d.intakeOpen), 120 * Deg, "%.0f deg", 1.0 / Deg);
+                sliderDouble("##ic", &d.intakeClose, std::min(std::max(0.0, 95 * Deg - d.intakeOpen), 115 * Deg), 120 * Deg, "%.0f deg", 1.0 / Deg);
                 ImGui::SeparatorText("Exhaust");
                 label("Opens (before BDC)");
                 sliderDouble("##eo", &d.exhaustOpen, 30 * Deg, 110 * Deg, "%.0f deg", 1.0 / Deg);
@@ -2761,7 +2776,7 @@ void AppUi::buildDesignerWindow() {
                 }
 
                 label("Intercooler effectiveness");
-                sliderDouble("##ic", &d.intercoolerEffectiveness, 0.0, 0.95, "%.0f %%", 100.0);
+                sliderDouble("##intercooler", &d.intercoolerEffectiveness, 0.0, 0.95, "%.0f %%", 100.0);
 
                 if (d.compressionRatio > 10.5 && !d.isRotary()) {
                     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::WarningColor()),

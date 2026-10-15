@@ -28,17 +28,26 @@ A GPU driver supporting OpenGL 4.1 or newer is required. The installers aren't s
 
 ## User interface
 
-![Engine designer](docs/public/screenshots/designer_v03.png?raw=true)
+![Engine Simulator 0.4](docs/public/screenshots/main_v04.png?raw=true)
 
 - **Controls** (left): ignition, starter, throttle, gears, clutch, brake, dynamometer and slow motion. The keyboard shortcuts below work as well.
-- **Instruments** (right): tachometer, speedometer, manifold pressure and air flow, and the engineering outputs of the last complete cycle (torque, power, mean effective pressures, efficiencies, BSFC, burn angles, peak pressure and temperature).
+- **Instruments** (right): tachometer, speedometer, manifold pressure (a boost gauge on turbocharged and supercharged engines) and air flow, turbo speed, wastegate and charge air temperatures, and the engineering outputs of the last complete cycle (torque, power, mean effective pressures, efficiencies, BSFC, burn angles, peak pressure and temperature).
 - **Analysis** (bottom): cylinder pressure and valve lift against crank angle, the p-V diagram, intake and exhaust flows, the dyno curve recorded while the dynamometer runs, speed/torque/manifold pressure history, the audio output and simulation performance.
-- **Engine designer** (*File* > *Engine designer*): build an engine from its parameters (inline, V or flat layout, cylinder count, bore, stroke, rod length, compression ratio, cams, intake and exhaust, ignition curve, fuel and mixture) and run it. Designs are saved as ordinary engine scripts in the user data folder (`assets/engines/custom`) and can be reopened in the designer or edited by hand.
-- **Tuning** (*Simulation* > *Tuning*): change the ignition timing, rev limiter, mixture, combustion efficiency, wall temperature, heat transfer, friction, sound and simulation frequency of the running engine.
-- **Settings** (*File* > *Settings*, Ctrl+,): fullscreen, vertical sync, interface scale and theme, units, master volume, muting in the background, simulation frequency and update checks.
+- **Engine library** (*File* > *Engine library*, Ctrl+L): presets of well-known engines (Honda K24, GM LS3, Toyota 2JZ-GTE, BMW B58, the 2026 Formula 1 V6, Chevrolet small-block 350, Chrysler 426 Hemi, Mazda 13B-REW, Porsche M97.74 and a Volkswagen W12) to load or customize, and your saved engines (load, edit, duplicate, delete).
+- **Engine designer** (*File* > *Engine designer*, Ctrl+D): build an engine from its parameters and run it: inline, V, flat (boxer), W (three or four banks) or rotary (Wankel) layouts, cylinder or rotor count, bore, stroke, rod length, compression ratio, firing order, valvetrain and cams (port timing for rotaries), intake and exhaust, exhaust sound, turbochargers and superchargers, ignition curve, fuel and mixture. Designs are saved (Save / Save as) as ordinary engine scripts in the user data folder (`assets/engines/custom`) and can be reopened in the designer or edited by hand.
+- **Tuning** (*Simulation* > *Tuning*): change the ignition timing, rev limiter, mixture, combustion efficiency, wall temperature, heat transfer, friction, boost (wastegate), supercharger drive ratio, intercooler, blow-off valve, sound and simulation frequency of the running engine.
+- **Settings** (*File* > *Settings*, Ctrl+, or Cmd+, on macOS): fullscreen, vertical sync, interface scale and theme, engine view style (realistic shaded metal or the classic flat theme colors), units, master volume, muting in the background, simulation frequency and update checks.
 - **Console** (F5): script errors and messages.
 
+![Engine library](docs/public/screenshots/library_v04.png?raw=true)
+
 Panels can be resized by dragging their inner edges, and Tab cycles between the full layout, the engine with its instruments, and the engine alone.
+
+The simulation runs on its own thread, so the frame rate of the interface doesn't drop when the physics gets expensive; the Performance tab shows where the time of each frame goes.
+
+## Turbochargers and superchargers
+
+Engines can have a turbocharger (single, twin or sequential) or a Roots, twin-screw or centrifugal supercharger, either from the designer's *Forced induction* tab or in a script with `add_forced_induction()` (see [docs/scripting.md](docs/scripting.md)). The compressor feeds a charge-air volume that the throttle draws from. A turbocharger's turbine sits in the exhaust and has to spool up; its wastegate holds the boost at the set point and a blow-off valve vents the charge when the throttle closes. Superchargers are driven by the crankshaft and take their drive power from it. The compressor whine and the blow-off valve are part of the sound.
 
 ## Controls
 
@@ -71,7 +80,8 @@ Panels can be resized by dragging their inner edges, and Tab cycles between the 
 | F5 | Show the console (loaded scripts, script errors, version and update status) |
 | F8 | Install an available update / restart into it |
 | Tab | Cycle the panel layout |
-| Ctrl + , | Settings |
+| Ctrl + , (Cmd + , on macOS) | Settings |
+| Ctrl + L / Ctrl + D | Engine library / engine designer |
 | F | Toggle fullscreen |
 | Escape | Exit |
 
@@ -108,13 +118,13 @@ At startup the application asks GitHub whether a newer release exists (it sends 
 | `assets/engines/` | Bundled engines (piston and rotary) |
 | `assets/themes/` | Color and unit themes |
 | `es/` | The scripting library (`engine_sim.mr`) and the part library |
-| User data folder | `settings.ini` (settings page), `session.ini` (last engine and theme), `layout.ini` (window positions), `error_log.log`, engines from the designer (`assets/engines/custom/`) and downloaded updates (`updates/`). On Windows `%APPDATA%\EngineSimulator\engine-sim`, on Linux `~/.local/share/EngineSimulator/engine-sim`, on macOS `~/Library/Application Support/EngineSimulator/engine-sim` |
+| User data folder | `settings.ini` (settings page), `session.ini` (last engine and theme), `layout.ini` (window positions), `error_log.log`, engines from the designer (`assets/engines/custom/`), presets loaded from the library (`assets/engines/presets/`) and downloaded updates (`updates/`). On Windows `%APPDATA%\EngineSimulator\engine-sim`, on Linux `~/.local/share/EngineSimulator/engine-sim`, on macOS `~/Library/Application Support/EngineSimulator/engine-sim` |
 
 Scripts placed in `assets/engines` or `assets/themes` inside the user data folder also show up when cycling engines and themes, and `import` statements search that `assets` folder too.
 
 ## Making your own engines
 
-Engines, vehicles, transmissions and themes are described in a small scripting language. Start with [docs/scripting.md](docs/scripting.md), which covers the structure of an engine script, units, the most important parameters, rotary engines and themes. The bundled engines in `assets/engines` are good starting points.
+The quickest way is the engine designer, which writes the script for you; start from a preset in the engine library to get a realistic baseline. Engines, vehicles, transmissions and themes are described in a small scripting language. Start with [docs/scripting.md](docs/scripting.md), which covers the structure of an engine script, units, the most important parameters, rotary engines and themes. The bundled engines in `assets/engines` are good starting points.
 
 An engine script ends by selecting what to simulate:
 

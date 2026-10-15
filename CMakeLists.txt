@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(engine-sim
-    VERSION 0.3.1
+    VERSION 0.4.0
     DESCRIPTION "Real-time internal combustion engine simulator"
     LANGUAGES C CXX)
 
@@ -459,6 +459,7 @@ if (ENGINE_SIM_BUILD_TESTS)
     add_executable(engine-sim-test
         test/gas_system_tests.cpp
         test/engine_design_tests.cpp
+        test/forced_induction_tests.cpp
         test/engine_model_tests.cpp
         test/function_test.cpp
         test/synthesizer_tests.cpp

@@ -7,6 +7,7 @@ out vec4 out_Color;
 in vec4 ex_Pos;
 in vec2 ex_Tex;
 in vec3 ex_Normal;
+in vec2 ex_Local;
 
 layout (binding = 0) uniform ScreenVariables {
 	mat4 CameraView;
@@ -131,6 +132,76 @@ vec3 srgbToLinear(vec3 v) {
 	);
 }
 
+// Shading of the flat 2D engine parts (Lit >= 2). Each part is given a
+// coordinate t that runs across it; the screen-space derivative of t gives
+// the direction across the part, so the surface normal of a round bar or
+// pin can be reconstructed at any rotation without extra geometry.
+//   2: cylinder across the model's local x (half width in DiffuseRoughness)
+//   3: round bar across a generated line's width (texture v)
+//   4: dome / journal (radial texture coordinates)
+//   5: plate with bevelled edges across a line's width
+//   6: flat metal
+//   7: turned (machined) disc, radius in DiffuseRoughness
+//   8: honed cylinder liner across a line's width
+// SpecularMix: highlight strength, SpecularPower: shininess,
+// Metallic: tints the highlight, DiffuseMix: grain, IncidentSpecular: grain
+// cells per local unit.
+float hash12(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 shadePart(vec3 base) {
+	float t = 0.0;
+	bool curved = true;
+	if (Lit == 2) t = clamp(ex_Local.x / max(DiffuseRoughness, 1e-4), -1.0, 1.0);
+	else if (Lit == 3 || Lit == 5) t = clamp(2.0 * ex_Tex.y - 1.0, -1.0, 1.0);
+	else if (Lit == 4) t = clamp(length(2.0 * ex_Tex - 1.0), 0.0, 1.0);
+	else curved = false;
+
+	vec3 n = vec3(0.0, 0.0, 1.0);
+	if (curved && Lit != 5) {
+		vec2 g = vec2(dFdx(t), dFdy(t));
+		float gl = length(g);
+		vec2 dir = (gl > 1e-6) ? g / gl : vec2(0.0);
+		n = normalize(vec3(dir * t, sqrt(max(1.0 - t * t, 0.0)) + 0.15));
+	}
+
+	vec3 l = normalize(vec3(-0.45, 0.6, 0.65));
+	vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+	float diffuse = max(dot(n, l), 0.0);
+	float highlight = pow(max(dot(n, h), 0.0), max(SpecularPower, 1.0)) * SpecularMix;
+
+	vec3 color = base * (0.42 + 0.72 * diffuse);
+	color += highlight * mix(vec3(1.0), base * 1.6, Metallic);
+
+	// Bevelled plates darken towards their edges
+	if (Lit == 5) color *= 1.0 - 0.35 * pow(abs(t), 6.0);
+
+	// Machining rings, darker towards the rim
+	if (Lit == 7) {
+		float r = length(ex_Local) / max(DiffuseRoughness, 1e-4);
+		color *= (1.0 + 0.025 * sin(r * 110.0)) * (1.0 - 0.18 * r * r);
+	}
+
+	// Concave bore with a cross-hatched hone pattern
+	if (Lit == 8) {
+		float u = clamp(2.0 * ex_Tex.y - 1.0, -1.0, 1.0);
+		vec2 p = ex_Local * 900.0;
+		float a = abs(fract(p.y + 0.55 * p.x) - 0.5);
+		float b = abs(fract(p.y - 0.55 * p.x) - 0.5);
+		float hatch = mix(0.86, 1.0, smoothstep(0.0, 0.12, min(a, b)));
+		color = base * (0.55 + 0.45 * u * u) * hatch;
+	}
+
+	// Fine grain fixed to the part
+	float grain = hash12(floor(ex_Local * IncidentSpecular)) - 0.5;
+	color *= 1.0 + DiffuseMix * grain;
+
+	return max(color, vec3(0.0)) + Emission.rgb;
+}
+
 void main(void) {
 	const float FullSpecular = 1 / 0.08;
 
@@ -151,7 +222,10 @@ void main(void) {
 
 	totalLighting = baseColor.rgb;
 
-	if (Lit == 1) {
+	if (Lit >= 2) {
+		totalLighting = shadePart(baseColor.rgb);
+	}
+	else if (Lit == 1) {
 		vec3 o = normalize(CameraEye.xyz - ex_Pos.xyz);
 		float cos_theta_o = dot(o, normal);
 

@@ -119,12 +119,20 @@ void CylinderHeadObject::render(const ViewParameters *view) {
     gen->generateCircle2d(circleParams);
     gen->endShape(&camCenter);
 
+    using Material = EngineSimApplication::Material;
+    const ysVector intakeColor = m_app->materialColor(Material::IntakeValve, m_app->getBlue());
+    const ysVector exhaustColor = m_app->materialColor(Material::ExhaustValve, m_app->getYellow());
+    const ysVector intakeCamColor = m_app->materialColor(Material::Cam, m_app->getBlue());
+    const ysVector exhaustCamColor = m_app->materialColor(Material::Cam, m_app->getYellow());
+
     m_app->getShaders()->SetObjectTransform(T_head);
-    m_app->getShaders()->SetBaseColor(col);
+    m_app->getShaders()->SetBaseColor(m_app->materialColor(Material::Head, col));
+    m_app->useMaterial(Material::Head, Shaders::Surface::Metal);
     m_app->getEngine()->DrawModel(
         m_app->getShaders()->GetRegularFlags(),
         m_app->getAssetManager()->GetModelAsset("CylinderHead"),
         0x0);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetObjectTransform(T_head);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(valveShadow, 0x1);
@@ -146,15 +154,19 @@ void CylinderHeadObject::render(const ViewParameters *view) {
                     0.0f)));
 
     m_app->getShaders()->SetObjectTransform(T_intakeValve);
-    m_app->getShaders()->SetBaseColor(m_app->getBlue());
+    m_app->getShaders()->SetBaseColor(intakeColor);
+    m_app->useMaterial(Material::IntakeValve, Shaders::Surface::Metal);
     m_app->getEngine()->DrawModel(
         m_app->getShaders()->GetRegularFlags(),
         m_app->getAssetManager()->GetModelAsset("Valve"),
         0x33);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(valveRollerShadow, 0x33);
-    m_app->getShaders()->SetBaseColor(m_app->getBlue());
+    m_app->getShaders()->SetBaseColor(intakeColor);
+    m_app->useMaterial(Material::IntakeValve, Shaders::Surface::Journal, 1.0f, true);
     m_app->drawGenerated(valveRoller, 0x33);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(valveRollerPin, 0x33);
 
@@ -169,15 +181,19 @@ void CylinderHeadObject::render(const ViewParameters *view) {
                 0.0f)));
 
     m_app->getShaders()->SetObjectTransform(T_exhaustValve);
-    m_app->getShaders()->SetBaseColor(m_app->getYellow());
+    m_app->getShaders()->SetBaseColor(exhaustColor);
+    m_app->useMaterial(Material::ExhaustValve, Shaders::Surface::Metal);
     m_app->getEngine()->DrawModel(
         m_app->getShaders()->GetRegularFlags(),
         m_app->getAssetManager()->GetModelAsset("Valve"),
         0x33);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(valveRollerShadow, 0x33);
-    m_app->getShaders()->SetBaseColor(m_app->getYellow());
+    m_app->getShaders()->SetBaseColor(exhaustColor);
+    m_app->useMaterial(Material::ExhaustValve, Shaders::Surface::Journal, 1.0f, true);
     m_app->drawGenerated(valveRoller, 0x33);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(valveRollerPin, 0x33);
 
@@ -204,8 +220,10 @@ void CylinderHeadObject::render(const ViewParameters *view) {
                 + exhaustCam->getLobeCenterline(layer))));
 
     m_app->getShaders()->SetObjectTransform(T_exhaustCam);
-    m_app->getShaders()->SetBaseColor(m_app->getYellow());
+    m_app->getShaders()->SetBaseColor(exhaustCamColor);
+    m_app->useMaterial(Material::Cam, Shaders::Surface::Metal, 1.0f, true);
     m_app->drawGenerated(exhaust);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(camCenter);
 
@@ -229,8 +247,10 @@ void CylinderHeadObject::render(const ViewParameters *view) {
     m_app->drawGenerated(intakeShadow);
 
     m_app->getShaders()->SetObjectTransform(T_intakeCam);
-    m_app->getShaders()->SetBaseColor(m_app->getBlue());
+    m_app->getShaders()->SetBaseColor(intakeCamColor);
+    m_app->useMaterial(Material::Cam, Shaders::Surface::Metal, 1.0f, true);
     m_app->drawGenerated(intake);
+    m_app->getShaders()->SetSurface(Shaders::Surface::Flat);
     m_app->getShaders()->SetBaseColor(m_app->getBackgroundColor());
     m_app->drawGenerated(camCenter);
 }

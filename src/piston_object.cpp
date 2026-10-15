@@ -29,8 +29,13 @@ void PistonObject::render(const ViewParameters *view) {
     const int layer = m_piston->getRod()->getLayer();
     if (layer > view->Layer1 || layer < view->Layer0) return;
 
-    const ysVector col = tintByLayer(m_app->getForegroundColor(), layer - view->Layer0);
-    const ysVector holeCol = tintByLayer(m_app->getBackgroundColor(), layer - view->Layer0);
+    using Material = EngineSimApplication::Material;
+    const bool realistic = m_app->isRealisticView();
+    const ysVector col = tintByLayer(
+        m_app->materialColor(Material::Piston, m_app->getForegroundColor()), layer - view->Layer0);
+    const ysVector holeCol = tintByLayer(
+        realistic ? m_app->materialColor(Material::Pin, m_app->getBackgroundColor()) : m_app->getBackgroundColor(),
+        layer - view->Layer0);
 
     resetShader();
     setTransform(
@@ -39,7 +44,9 @@ void PistonObject::render(const ViewParameters *view) {
         0.0f,
         (float)(-m_piston->getCompressionHeight() - m_piston->getWristPinLocation()));
 
+    // The piston model spans -1..1 across the bore
     m_app->getShaders()->SetBaseColor(col);
+    m_app->useMaterial(Material::Piston, Shaders::Surface::Cylinder, 1.0f);
     m_app->getEngine()->DrawModel(
         m_app->getShaders()->GetRegularFlags(),
         m_app->getAssetManager()->GetModelAsset("Piston"),
@@ -47,6 +54,7 @@ void PistonObject::render(const ViewParameters *view) {
 
     setTransform(&m_piston->m_body);
     m_app->getShaders()->SetBaseColor(holeCol);
+    m_app->useMaterial(Material::Pin, Shaders::Surface::Journal, 1.0f, true);
     m_app->drawGenerated(m_wristPinHole, 0x32 - layer);
 }
 
