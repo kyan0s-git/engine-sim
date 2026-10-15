@@ -37,6 +37,16 @@ namespace {
     constexpr float NaN = std::numeric_limits<float>::quiet_NaN();
     constexpr double Ambient = units::pressure(1.0, units::atm);
 
+#ifdef __APPLE__
+    constexpr const char *SettingsShortcut = "Cmd+,";
+    constexpr const char *LibraryShortcut = "Cmd+L";
+    constexpr const char *DesignerShortcut = "Cmd+D";
+#else
+    constexpr const char *SettingsShortcut = "Ctrl+,";
+    constexpr const char *LibraryShortcut = "Ctrl+L";
+    constexpr const char *DesignerShortcut = "Ctrl+D";
+#endif
+
     double now() {
         return SDL_GetTicks() / 1000.0;
     }
@@ -147,6 +157,9 @@ AppUi::AppUi() {
     m_showConsole = false;
     m_showSettings = false;
     m_showDesigner = false;
+    m_showLibrary = false;
+    m_savedDesignsValid = false;
+    m_saveAsName[0] = '\0';
     m_showTuning = false;
     m_showHelp = false;
     m_showAbout = false;
@@ -269,6 +282,24 @@ bool AppUi::processEvent(const SDL_Event &event) {
 
     ImGui_ImplSDL2_ProcessEvent(&event);
 
+    // Ctrl+, / Ctrl+L / Ctrl+D (Cmd on macOS) toggle the settings, the
+    // engine library and the designer wherever the focus is. The keys are
+    // kept from the engine's own shortcuts (D toggles the dyno).
+    if (event.type == SDL_KEYDOWN && (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0) {
+        bool *window = nullptr;
+        switch (event.key.keysym.sym) {
+        case SDLK_COMMA: window = &m_showSettings; break;
+        case SDLK_l: window = &m_showLibrary; break;
+        case SDLK_d: window = &m_showDesigner; break;
+        default: break;
+        }
+
+        if (window != nullptr) {
+            if (!event.key.repeat) *window = !*window;
+            return true;
+        }
+    }
+
     const ImGuiIO &io = ImGui::GetIO();
     switch (event.type) {
     case SDL_MOUSEMOTION:
@@ -341,6 +372,13 @@ void AppUi::onEngineLoaded(Engine *engine, Simulator *simulator) {
         m_tuningDefaults.highFrequencyGain = audio.dF_F_mix;
         m_tuningDefaults.airNoise = audio.airNoise;
         m_tuningDefaults.inputNoise = audio.inputSampleNoise;
+
+        if (const ForcedInduction *fi = engine->getForcedInduction()) {
+            m_tuningDefaults.boostTarget = fi->getBoostTarget();
+            m_tuningDefaults.driveRatio = fi->getDriveRatio();
+            m_tuningDefaults.intercoolerEffectiveness = fi->getIntercoolerEffectiveness();
+            m_tuningDefaults.blowoffValve = fi->hasBlowoffValve();
+        }
     }
 
     // Generated engines can be opened in the designer again
@@ -450,6 +488,22 @@ void AppUi::addAudioSample(float sample) {
 
     m_audio[m_audioIndex] = sample;
     m_audioIndex = (m_audioIndex + 1) % AudioHistory;
+}
+
+void AppUi::addFrameProfile(const FrameProfile &p) {
+    const double a = 0.05;
+    m_profile.ui += (p.ui - m_profile.ui) * a;
+    m_profile.simulation += (p.simulation - m_profile.simulation) * a;
+    m_profile.scene += (p.scene - m_profile.scene) * a;
+    m_profile.present += (p.present - m_profile.present) * a;
+    m_profile.total += (p.total - m_profile.total) * a;
+
+    if (p.total > m_profilePeakRunning.total) m_profilePeakRunning = p;
+    if (m_clock - m_profilePeakTime > 1.0) {
+        m_profilePeak = m_profilePeakRunning;
+        m_profilePeakRunning = FrameProfile();
+        m_profilePeakTime = m_clock;
+    }
 }
 
 void AppUi::addFrameTiming(double timePerStep, double audioLatency, double inputBufferUsage) {
@@ -795,10 +849,6 @@ void AppUi::build() {
 
     collectFrameData();
 
-    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Comma)) {
-        m_showSettings = true;
-    }
-
     const float s = m_preferences.uiScale;
     buildMenuBar();
 
@@ -887,6 +937,7 @@ void AppUi::build() {
     if (m_showConsole) buildConsoleWindow();
     if (m_showSettings) buildSettingsWindow();
     if (m_showDesigner) buildDesignerWindow();
+    if (m_showLibrary) buildLibraryWindow();
     if (m_showTuning) buildTuningWindow();
     if (m_showHelp) buildHelpWindow();
     if (m_showAbout) buildAboutWindow();
@@ -971,13 +1022,14 @@ void AppUi::buildMenuBar() {
         if (ImGui::MenuItem("Next engine", "PgDn")) m_controls.cycleEngine = 1;
         if (ImGui::MenuItem("Reload", "Enter")) m_controls.reloadRequested = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Engine designer...")) m_showDesigner = true;
+        if (ImGui::MenuItem("Engine library...", LibraryShortcut)) m_showLibrary = true;
+        if (ImGui::MenuItem("Engine designer...", DesignerShortcut)) m_showDesigner = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Open user folder")) {
             const std::string url = "file://" + m_app->getUserDataPath();
             SDL_OpenURL(url.c_str());
         }
-        if (ImGui::MenuItem("Settings...", "Ctrl+,")) m_showSettings = true;
+        if (ImGui::MenuItem("Settings...", SettingsShortcut)) m_showSettings = true;
         ImGui::Separator();
         if (ImGui::MenuItem("Quit", "Esc")) m_controls.quitRequested = true;
         ImGui::EndMenu();
@@ -1158,7 +1210,8 @@ void AppUi::buildControlPanel() {
     const float s = m_preferences.uiScale;
 
     if (m_engine == nullptr || m_simulator == nullptr) {
-        ImGui::TextWrapped("No engine is loaded. Pick one from File > Load engine or design one in the engine designer.");
+        ImGui::TextWrapped("No engine is loaded. Pick one from the engine library or design one in the engine designer.");
+        if (ImGui::Button("Engine library...", ImVec2(-FLT_MIN, 0))) m_showLibrary = true;
         if (ImGui::Button("Engine designer...", ImVec2(-FLT_MIN, 0))) m_showDesigner = true;
         return;
     }
@@ -1278,7 +1331,10 @@ void AppUi::buildControlPanel() {
     }
 
     ImGui::Spacing();
-    if (ImGui::Button("Tuning...", ImVec2(third * 2 + ImGui::GetStyle().ItemSpacing.x, 0))) m_showTuning = true;
+    const float buttonWidth = (ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x) / 3;
+    if (ImGui::Button("Tuning...", ImVec2(buttonWidth, 0))) m_showTuning = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Library...", ImVec2(buttonWidth, 0))) m_showLibrary = true;
     ImGui::SameLine();
     if (ImGui::Button("Designer...", ImVec2(-FLT_MIN, 0))) m_showDesigner = true;
 
@@ -1358,7 +1414,33 @@ void AppUi::buildInstrumentPanel() {
         style.unit = unit.c_str();
         float value = 0;
         const char *label = "MANIFOLD";
-        if (unit == "inHg" || unit == "psi") {
+        const ForcedInduction *fi = m_engine->getForcedInduction();
+        const double maxBoost = (fi != nullptr)
+            ? std::max(1.6 * fi->getBoostTarget(), units::pressure(1.2, units::bar))
+            : 0.0;
+        if (fi != nullptr && (unit == "inHg" || unit == "psi")) {
+            // Boost gauge: vacuum and boost in psi
+            label = "BOOST";
+            style.unit = "psi";
+            value = static_cast<float>(units::convert(map - Ambient, units::psi));
+            style.min = -15.0f;
+            style.max = std::ceil(static_cast<float>(units::convert(maxBoost, units::psi)) / 5.0f) * 5.0f;
+            style.majorStep = 5.0f;
+            style.minorTicks = 4;
+            style.valueFormat = "%.1f";
+        }
+        else if (fi != nullptr) {
+            label = "MANIFOLD";
+            value = static_cast<float>(toPressure(map));
+            style.min = 0;
+            style.max = static_cast<float>(toPressure(Ambient + maxBoost));
+            style.max = (unit == "bar") ? std::ceil(style.max * 2.0f) / 2.0f : std::ceil(style.max / 50.0f) * 50.0f;
+            style.majorStep = (unit == "bar") ? 0.5f : 50.0f;
+            style.minorTicks = 4;
+            style.format = (unit == "bar") ? "%.1f" : "%.0f";
+            style.valueFormat = (unit == "bar") ? "%.2f" : "%.0f";
+        }
+        else if (unit == "inHg" || unit == "psi") {
             // Vacuum gauge: pressure relative to the atmosphere
             label = "VACUUM";
             value = static_cast<float>(toPressure(map - Ambient));
@@ -1427,6 +1509,53 @@ void AppUi::buildInstrumentPanel() {
 
         if (m_simulator->getTransmission() != nullptr) {
             ui::BarMeter("Clutch", static_cast<float>(m_simulator->getTransmission()->getClutchPressure() * 100.0), 0, 100, "%.0f %%");
+        }
+    }
+
+    if (const ForcedInduction *fi = m_engine->getForcedInduction()) {
+        if (ImGui::CollapsingHeader(fi->getDescription().c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            const bool imperial = (pressureUnits() == "inHg" || pressureUnits() == "psi");
+            const double boost = fi->getBoost();
+            char format[48];
+            std::snprintf(format, sizeof(format), "%%.%df %s", imperial ? 1 : 2, imperial ? "psi" : "bar");
+            auto toBoost = [&](double pa) {
+                return static_cast<float>(imperial ? units::convert(pa, units::psi) : units::convert(pa, units::bar));
+            };
+            const float maxBoost = toBoost(std::max(1.6 * fi->getBoostTarget(), units::pressure(1.2, units::bar)));
+            ui::BarMeter("Boost (charge air)", toBoost(boost), 0.0f, maxBoost, format,
+                boost > 1.1 * fi->getBoostTarget() && fi->isTurbocharger() ? ui::WarningColor() : ui::AccentColor());
+
+            const double krpm = fi->getShaftSpeed() * 60 / (2 * constants::pi) / 1000;
+            const double maxKrpm = fi->getMaxSpeed() * 60 / (2 * constants::pi) / 1000;
+            ui::BarMeter(fi->isTurbocharger() ? "Turbo speed" : "Compressor speed",
+                static_cast<float>(krpm), 0.0f, static_cast<float>(std::max(maxKrpm, 1.0)), "%.0f krpm");
+
+            if (fi->getArrangement() == ForcedInduction::Arrangement::Sequential) {
+                const ForcedInduction::Unit &second = fi->getUnit(1);
+                ui::BarMeter(second.active ? "Second turbo (on)" : "Second turbo (off)",
+                    static_cast<float>(second.omega * 60 / (2 * constants::pi) / 1000),
+                    0.0f, static_cast<float>(std::max(maxKrpm, 1.0)), "%.0f krpm");
+            }
+
+            if (fi->isTurbocharger()) {
+                ui::BarMeter("Wastegate", static_cast<float>(fi->getWastegateOpening() * 100), 0, 100, "%.0f %% open");
+            }
+
+            if (ImGui::BeginTable("##forcedinduction", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+                ui::ValueRow("Charge air", "%.0f %s (compressor out %.0f)",
+                    toTemperature(fi->getChargeTemperature()), temperatureUnits(),
+                    toTemperature(fi->getCompressorOutletTemperature()));
+                if (fi->isTurbocharger()) {
+                    ui::ValueRow("Turbine power", "%.1f %s", toPower(fi->getTurbinePower()), powerUnits().c_str());
+                }
+                else {
+                    ui::ValueRow("Drive power", "%.1f %s", toPower(fi->getDrivePower()), powerUnits().c_str());
+                }
+                if (fi->getBlowoffOpening() > 0.05) {
+                    ui::ValueRow("Blow-off valve", "venting");
+                }
+                ImGui::EndTable();
+            }
         }
     }
 
@@ -1738,11 +1867,11 @@ void AppUi::buildTrendPlot() {
         ImPlot::SetupAxis(ImAxis_X1, "Time [s]");
         ImPlot::SetupAxis(ImAxis_Y1, "Engine speed [rpm]", ImPlotAxisFlags_AutoFit);
         ImPlot::SetupAxisZoomConstraints(ImAxis_Y1, 500.0, HUGE_VAL);
-        ImPlot::SetupAxis(ImAxis_Y2, "Manifold [kPa]", ImPlotAxisFlags_AuxDefault);
+        ImPlot::SetupAxis(ImAxis_Y2, "Manifold [kPa]", ImPlotAxisFlags_AuxDefault | ImPlotAxisFlags_AutoFit);
+        ImPlot::SetupAxisZoomConstraints(ImAxis_Y2, 20.0, HUGE_VAL);
         ImPlot::SetupAxis(ImAxis_Y3, torqueLabel.c_str(), ImPlotAxisFlags_AuxDefault | ImPlotAxisFlags_AutoFit);
         ImPlot::SetupAxisZoomConstraints(ImAxis_Y3, 10.0, HUGE_VAL);
         ImPlot::SetupAxisLimits(ImAxis_X1, m_clock - 10.0, m_clock, ImPlotCond_Always);
-        ImPlot::SetupAxisLimits(ImAxis_Y2, 0, 110, ImPlotCond_Once);
         ImPlot::SetupLegend(ImPlotLocation_NorthWest);
 
         ImPlot::SetAxes(ImAxis_X1, ImAxis_Y1);
@@ -1780,11 +1909,16 @@ void AppUi::buildPerformanceTable() {
     if (ImGui::BeginTable("##performance", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp, ImVec2(std::min(ImGui::GetContentRegionAvail().x, 520.0f * m_preferences.uiScale), 0))) {
         ui::ValueRow("Frame rate", "%.0f fps", ImGui::GetIO().Framerate);
         ui::ValueRow("Simulation frequency", "%.0f Hz", frequency);
-        ui::ValueRow("Steps per frame", "%d", m_simulator->getFrameIterationCount());
+        ui::ValueRow("Steps per slice", "%d", m_simulator->getFrameIterationCount());
         ui::ValueRow("Time per step", "%.2f us", m_timePerStep * 1E6);
         ui::ValueRow("Physics load", "%.0f %% of real time", load * 100);
         ui::ValueRow("Audio latency", "%.0f %% of target", m_audioLatency * 100);
         ui::ValueRow("Synthesizer input buffer", "%.0f %%", m_inputBufferUsage * 100);
+        ui::ValueRow("Frame (average / worst)", "%.1f / %.1f ms", m_profile.total * 1E3, m_profilePeak.total * 1E3);
+        ui::ValueRow("  User interface", "%.1f / %.1f ms", m_profile.ui * 1E3, m_profilePeak.ui * 1E3);
+        ui::ValueRow("  Waiting for the simulation", "%.1f / %.1f ms", m_profile.simulation * 1E3, m_profilePeak.simulation * 1E3);
+        ui::ValueRow("  Engine view", "%.1f / %.1f ms", m_profile.scene * 1E3, m_profilePeak.scene * 1E3);
+        ui::ValueRow("  Present (incl. vsync)", "%.1f / %.1f ms", m_profile.present * 1E3, m_profilePeak.present * 1E3);
         ImGui::EndTable();
     }
 
@@ -1803,14 +1937,23 @@ void AppUi::buildEngineViewOverlay() {
     const ImVec2 origin(m_engineViewRect.x / scale.x + 12, m_engineViewRect.y / scale.y + 10);
     ImDrawList *draw = ImGui::GetBackgroundDrawList();
 
-    char text[160];
+    char text[224];
     const Transmission *transmission = m_simulator->getTransmission();
     const int gear = (transmission != nullptr) ? transmission->getGear() : -1;
     const bool limiting = m_engine->getIgnitionModule()->m_enabled && m_engine->getIgnitionModule()->isLimiting();
-    std::snprintf(text, sizeof(text), "%.0f rpm   %s   throttle %.0f%%%s%s%s",
+    char boost[48] = "";
+    if (const ForcedInduction *fi = m_engine->getForcedInduction()) {
+        const bool imperial = (pressureUnits() == "inHg" || pressureUnits() == "psi");
+        std::snprintf(boost, sizeof(boost), "   boost %.*f %s",
+            imperial ? 1 : 2,
+            imperial ? units::convert(fi->getBoost(), units::psi) : units::convert(fi->getBoost(), units::bar),
+            imperial ? "psi" : "bar");
+    }
+    std::snprintf(text, sizeof(text), "%.0f rpm   %s   throttle %.0f%%%s%s%s%s",
         std::max(0.0, m_engine->getRpm()),
         gear < 0 ? "N" : ("gear " + std::to_string(gear + 1)).c_str(),
         m_engine->getSpeedControl() * 100,
+        boost,
         m_simulator->m_dyno.m_enabled ? "   dyno" : "",
         m_engine->getIgnitionModule()->m_enabled ? "" : "   ignition off",
         limiting ? "   REV LIMITER" : "");
@@ -2079,9 +2222,10 @@ void AppUi::generateDesign(bool load) {
     file.close();
 
     m_designPath = path.string();
-    m_designStatus = "Saved " + path.filename().string();
+    m_designStatus = "Saved " + path.filename().string() + " to My engines";
     m_designStatusError = false;
     m_scriptListsValid = false;
+    m_savedDesignsValid = false;
 
     if (load) {
         m_controls.loadScript = m_designPath;
@@ -2103,10 +2247,229 @@ bool AppUi::openDesignFromScript(const std::string &path) {
     return true;
 }
 
+void AppUi::loadDesign(const EngineDesign &design) {
+    // Presets are generated into a cache folder; saving them from the
+    // designer puts a copy into My engines
+    const fs::path directory = fs::path(m_app->getUserDataPath()) / "assets" / "engines" / "presets";
+    std::error_code ec;
+    fs::create_directories(directory, ec);
+
+    const fs::path path = directory / (designFileName(design.name) + ".mr");
+    std::ofstream file(path, std::ios::out | std::ios::trunc);
+    if (!file.is_open()) {
+        log("Could not write " + path.string());
+        return;
+    }
+
+    file << generateEngineScript(design);
+    file.close();
+
+    m_scriptListsValid = false;
+    m_controls.loadScript = path.string();
+}
+
+void AppUi::refreshSavedDesigns() {
+    if (m_savedDesignsValid) return;
+    m_savedDesignsValid = true;
+    m_savedDesigns.clear();
+
+    const fs::path directory = fs::path(m_app->getUserDataPath()) / "assets" / "engines" / "custom";
+    std::error_code ec;
+    if (!fs::is_directory(directory, ec)) return;
+
+    for (const fs::directory_entry &entry : fs::directory_iterator(directory, ec)) {
+        if (entry.path().extension() != ".mr") continue;
+
+        std::ifstream file(entry.path());
+        std::stringstream ss;
+        ss << file.rdbuf();
+
+        SavedDesign saved;
+        saved.path = entry.path().string();
+        saved.designed = readEngineDesign(ss.str(), &saved.design);
+        if (!saved.designed) saved.design.name = entry.path().stem().string();
+        m_savedDesigns.push_back(saved);
+    }
+
+    std::sort(m_savedDesigns.begin(), m_savedDesigns.end(), [](const SavedDesign &a, const SavedDesign &b) {
+        return a.design.name < b.design.name;
+    });
+}
+
+namespace {
+
+    std::string describeDesign(const EngineDesign &d) {
+        char text[160];
+        if (d.isRotary()) {
+            std::snprintf(text, sizeof(text), "%d-rotor rotary, %s", d.rotors, formatDisplacement(d.displacement()).c_str());
+        }
+        else {
+            const char *layout =
+                (d.layout == EngineDesign::Layout::V) ? "V"
+                : (d.layout == EngineDesign::Layout::Flat) ? "flat-"
+                : (d.layout == EngineDesign::Layout::W) ? "W"
+                : "I";
+            std::snprintf(text, sizeof(text), "%s%d, %s", layout, d.cylinders, formatDisplacement(d.displacement()).c_str());
+        }
+
+        std::string result = text;
+        if (d.isBoosted()) result += std::string(", ") + EngineDesign::inductionName(d.induction);
+        return result;
+    }
+
+} /* namespace */
+
+void AppUi::buildLibraryWindow() {
+    const float s = m_preferences.uiScale;
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(760 * s, 560 * s), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Engine library", &m_showLibrary)) {
+        ImGui::End();
+        return;
+    }
+
+    refreshSavedDesigns();
+
+    const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH
+        | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY;
+
+    if (ImGui::BeginTabBar("##library")) {
+        if (ImGui::BeginTabItem("Presets")) {
+            ImGui::TextDisabled("Well-known engines built with the designer. Load one, or customize it and save your own version.");
+            if (ImGui::BeginTable("##presets", 3, flags)) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("Engine", ImGuiTableColumnFlags_WidthStretch, 0.32f);
+                ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch, 0.68f);
+                ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, 150 * s);
+                ImGui::TableHeadersRow();
+
+                const std::vector<EngineDesign> &presets = builtinEnginePresets();
+                for (size_t i = 0; i < presets.size(); ++i) {
+                    const EngineDesign &d = presets[i];
+                    ImGui::PushID(static_cast<int>(i));
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(d.name.c_str());
+                    ImGui::TextDisabled("%s", describeDesign(d).c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextWrapped("%s", d.description.c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    if (ImGui::Button("Load")) loadDesign(d);
+                    ImGui::SameLine();
+                    if (ImGui::Button("Customize")) {
+                        m_design = d;
+                        m_designPath.clear();
+                        m_designStatus = "Editing a copy of the " + d.name + " preset";
+                        m_designStatusError = false;
+                        m_showDesigner = true;
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("My engines")) {
+            if (ImGui::Button("New engine...")) {
+                m_design = EngineDesign();
+                m_designPath.clear();
+                m_designStatus.clear();
+                m_showDesigner = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Refresh")) m_savedDesignsValid = false;
+            ImGui::SameLine();
+            if (ImGui::Button("Open folder")) {
+                const fs::path directory = fs::path(m_app->getUserDataPath()) / "assets" / "engines" / "custom";
+                std::error_code ec;
+                fs::create_directories(directory, ec);
+                SDL_OpenURL(("file://" + directory.string()).c_str());
+            }
+
+            if (m_savedDesigns.empty()) {
+                ImGui::Spacing();
+                ImGui::TextWrapped("No saved engines yet. Design one (or customize a preset) and press Save; "
+                    "engine scripts copied into the folder appear here too.");
+            }
+            else if (ImGui::BeginTable("##saved", 3, flags)) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("Engine", ImGuiTableColumnFlags_WidthStretch, 0.45f);
+                ImGui::TableSetupColumn("Configuration", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+                ImGui::TableSetupColumn("##actions", ImGuiTableColumnFlags_WidthFixed, 250 * s);
+                ImGui::TableHeadersRow();
+
+                for (size_t i = 0; i < m_savedDesigns.size(); ++i) {
+                    const SavedDesign &saved = m_savedDesigns[i];
+                    ImGui::PushID(saved.path.c_str());
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    const bool current = (saved.path == m_app->getEngineScriptPath());
+                    if (current) ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::AccentColor()), "%s", saved.design.name.c_str());
+                    else ImGui::TextUnformatted(saved.design.name.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    if (saved.designed) ImGui::TextDisabled("%s", describeDesign(saved.design).c_str());
+                    else ImGui::TextDisabled("hand-written script");
+                    ImGui::TableSetColumnIndex(2);
+                    if (ImGui::Button("Load")) m_controls.loadScript = saved.path;
+                    if (saved.designed) {
+                        ImGui::SameLine();
+                        if (ImGui::Button("Edit")) {
+                            m_design = saved.design;
+                            m_designPath = saved.path;
+                            m_designStatus.clear();
+                            m_showDesigner = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Duplicate")) {
+                            m_design = saved.design;
+                            m_design.name += " (copy)";
+                            generateDesign(false);
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Delete")) {
+                        m_pendingDelete = saved.path;
+                        ImGui::OpenPopup("Delete engine?");
+                    }
+
+                    if (ImGui::BeginPopupModal("Delete engine?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ImGui::Text("Delete %s?", fs::path(m_pendingDelete).filename().string().c_str());
+                        ImGui::TextDisabled("The script file is removed from the My engines folder.");
+                        if (ImGui::Button("Delete", ImVec2(120 * s, 0))) {
+                            std::error_code ec;
+                            fs::remove(m_pendingDelete, ec);
+                            if (ec) log("Could not delete " + m_pendingDelete + ": " + ec.message());
+                            m_savedDesignsValid = false;
+                            m_scriptListsValid = false;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Cancel", ImVec2(120 * s, 0))) ImGui::CloseCurrentPopup();
+                        ImGui::EndPopup();
+                    }
+
+                    ImGui::PopID();
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+
 void AppUi::buildDesignerWindow() {
     const float s = m_preferences.uiScale;
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(620 * s, 640 * s), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(660 * s, 680 * s), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Engine designer", &m_showDesigner)) {
         ImGui::End();
         return;
@@ -2121,6 +2484,7 @@ void AppUi::buildDesignerWindow() {
         ImGui::SameLine(labelWidth);
         ImGui::SetNextItemWidth(-FLT_MIN);
     };
+    const bool imperial = (pressureUnits() == "inHg" || pressureUnits() == "psi");
 
     // Summary
     {
@@ -2129,85 +2493,186 @@ void AppUi::buildDesignerWindow() {
         label("Name");
         if (ImGui::InputText("##name", name, sizeof(name))) d.name = name;
 
-        const double cylinderVolume = d.cylinderDisplacement();
-        const double pistonSpeed = 2 * d.stroke * d.redline / 60.0;
-        ImGui::TextDisabled("%s, %.0f cc per cylinder, bore/stroke %.2f, mean piston speed at redline %.1f m/s",
-            formatDisplacement(d.displacement()).c_str(),
-            units::convert(cylinderVolume, units::cc),
-            d.bore / d.stroke,
-            pistonSpeed);
-        if (pistonSpeed > 25.0) {
-            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::WarningColor()),
-                "Mean piston speeds above about 25 m/s are beyond production engines.");
+        label("Start from");
+        if (ImGui::BeginCombo("##preset", "a preset...")) {
+            for (const EngineDesign &preset : builtinEnginePresets()) {
+                if (ImGui::Selectable(preset.name.c_str())) {
+                    d = preset;
+                    m_designPath.clear();
+                    m_designStatus = "Editing a copy of the " + preset.name + " preset";
+                    m_designStatusError = false;
+                }
+            }
+            ImGui::EndCombo();
         }
 
-        std::string order;
-        for (int c : d.firingOrder()) order += (order.empty() ? "" : "-") + std::to_string(c);
-        ImGui::TextDisabled("Firing order %s", order.c_str());
+        if (d.isRotary()) {
+            ImGui::TextDisabled("%s: %d x %.0f cc, compression %.1f : 1",
+                formatDisplacement(d.displacement()).c_str(), d.rotors,
+                units::convert(d.cylinderDisplacement(), units::cc), d.compressionRatio);
+        }
+        else {
+            const double pistonSpeed = 2 * d.stroke * d.redline / 60.0;
+            ImGui::TextDisabled("%s, %.0f cc per cylinder, bore/stroke %.2f, mean piston speed at redline %.1f m/s",
+                formatDisplacement(d.displacement()).c_str(),
+                units::convert(d.cylinderDisplacement(), units::cc),
+                d.bore / d.stroke,
+                pistonSpeed);
+            if (pistonSpeed > 25.0) {
+                ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::WarningColor()),
+                    "Mean piston speeds above about 25 m/s are beyond production engines.");
+            }
+
+            std::string order;
+            for (int c : d.firingOrder()) order += (order.empty() ? "" : "-") + std::to_string(c);
+            ImGui::TextDisabled("Firing order %s", order.c_str());
+        }
     }
 
     if (ImGui::BeginTabBar("##design")) {
         if (ImGui::BeginTabItem("Layout")) {
             label("Configuration");
             int layout = static_cast<int>(d.layout);
-            const char *layouts[] = { "Inline", "V", "Flat (boxer)" };
-            if (ImGui::Combo("##layout", &layout, layouts, 3)) {
+            const char *layouts[] = { "Inline", "V", "Flat (boxer)", "W", "Rotary (Wankel)" };
+            if (ImGui::Combo("##layout", &layout, layouts, 5)) {
+                const EngineDesign::Layout previous = d.layout;
                 d.layout = static_cast<EngineDesign::Layout>(layout);
                 if (d.layout == EngineDesign::Layout::Flat) d.bankAngle = constants::pi;
                 else if (d.layout == EngineDesign::Layout::V && d.bankAngle >= constants::pi) d.bankAngle = constants::pi / 2;
+                else if (d.layout == EngineDesign::Layout::W) {
+                    d.bankAngle = (d.wBanks == 3) ? 120 * Deg : 72 * Deg;
+                    if (d.cylinders < 8) d.cylinders = 12;
+                }
+                if (d.layout == EngineDesign::Layout::Rotary || previous == EngineDesign::Layout::Rotary) {
+                    d.compressionRatio = (d.layout == EngineDesign::Layout::Rotary) ? 9.0 : 10.5;
+                    if (d.redline < 7000 && d.layout == EngineDesign::Layout::Rotary) d.redline = 8000;
+                }
+                d.firingOrderText.clear();
                 d.validate();
             }
 
-            label("Cylinders");
-            if (d.layout == EngineDesign::Layout::Inline) {
-                ImGui::SliderInt("##cylinders", &d.cylinders, 1, 12);
+            if (d.isRotary()) {
+                label("Rotors");
+                ImGui::SliderInt("##rotors", &d.rotors, 1, 4);
+                label("Eccentricity");
+                sliderDouble("##ecc", &d.eccentricity, 0.008, 0.025, "%.1f mm", 1000.0);
+                label("Generating radius");
+                sliderDouble("##genr", &d.generatingRadius, 5.0 * d.eccentricity, 10.0 * d.eccentricity, "%.1f mm", 1000.0);
+                ImGui::SameLine(); ui::HelpMarker("Rotor center to apex. R / e between 6.5 and 7.5 is typical.");
+                label("Rotor width");
+                sliderDouble("##rwidth", &d.rotorWidth, 0.03, 0.12, "%.1f mm", 1000.0);
             }
             else {
-                // Two banks: even counts only
-                int pairs = d.cylinders / 2;
-                char format[16];
-                std::snprintf(format, sizeof(format), "%d", pairs * 2);
-                if (ImGui::SliderInt("##cylinders", &pairs, 1, 8, format)) d.cylinders = pairs * 2;
-            }
-            if (d.layout == EngineDesign::Layout::V) {
-                label("Bank angle");
-                sliderDouble("##bankangle", &d.bankAngle, 15 * Deg, 150 * Deg, "%.0f deg", 1.0 / Deg);
+                label("Cylinders");
+                if (d.layout == EngineDesign::Layout::Inline) {
+                    ImGui::SliderInt("##cylinders", &d.cylinders, 1, 12);
+                }
+                else {
+                    const int banks = d.bankCount();
+                    int perBank = d.cylinders / banks;
+                    char format[16];
+                    std::snprintf(format, sizeof(format), "%d", perBank * banks);
+                    if (ImGui::SliderInt("##cylinders", &perBank, 1, (banks == 2) ? 8 : 6, format)) {
+                        d.cylinders = perBank * banks;
+                        d.firingOrderText.clear();
+                    }
+                }
+
+                if (d.layout == EngineDesign::Layout::V) {
+                    label("Bank angle");
+                    sliderDouble("##bankangle", &d.bankAngle, 10 * Deg, 150 * Deg, "%.0f deg", 1.0 / Deg);
+                }
+                else if (d.layout == EngineDesign::Layout::W) {
+                    label("Banks");
+                    if (ImGui::RadioButton("Two narrow V's (4 banks)", d.wBanks == 4)) {
+                        d.wBanks = 4; d.bankAngle = 72 * Deg; d.validate();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::RadioButton("Broad arrow (3 banks)", d.wBanks == 3)) {
+                        d.wBanks = 3; d.bankAngle = 120 * Deg; d.validate();
+                    }
+                    label(d.wBanks == 4 ? "Angle between the halves" : "Angle between the outer banks");
+                    sliderDouble("##bankangle", &d.bankAngle, 30 * Deg, 150 * Deg, "%.0f deg", 1.0 / Deg);
+                    if (d.wBanks == 4) {
+                        label("Angle within each half");
+                        sliderDouble("##vrangle", &d.vrAngle, 5 * Deg, 30 * Deg, "%.1f deg", 1.0 / Deg);
+                    }
+                }
+
+                char order[96];
+                std::snprintf(order, sizeof(order), "%s", d.firingOrderText.c_str());
+                label("Firing order");
+                if (ImGui::InputTextWithHint("##firing", "automatic (even firing)", order, sizeof(order))) {
+                    d.firingOrderText = order;
+                }
+                std::vector<int> parsed;
+                if (!d.firingOrderText.empty() && !EngineDesign::parseFiringOrder(d.firingOrderText, d.cylinders, &parsed)) {
+                    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::WarningColor()),
+                        "List each cylinder 1-%d once (e.g. 1-3-4-2); the automatic order is used until then.", d.cylinders);
+                }
+                else if (d.bankCount() > 1) {
+                    ImGui::TextDisabled("Cylinders are numbered bank by bank: 1-%d on the first bank, and so on.", d.cylindersPerBank());
+                }
+
+                label("Bore");
+                sliderDouble("##bore", &d.bore, 0.03, 0.15, "%.1f mm", 1000.0);
+                label("Stroke");
+                sliderDouble("##stroke", &d.stroke, 0.03, 0.15, "%.1f mm", 1000.0);
+                label("Connecting rod length");
+                sliderDouble("##rod", &d.rodLength, 1.2 * d.stroke, 3.0 * d.stroke, "%.1f mm", 1000.0);
             }
 
-            label("Bore");
-            sliderDouble("##bore", &d.bore, 0.03, 0.15, "%.1f mm", 1000.0);
-            label("Stroke");
-            sliderDouble("##stroke", &d.stroke, 0.03, 0.15, "%.1f mm", 1000.0);
-            label("Connecting rod length");
-            sliderDouble("##rod", &d.rodLength, 1.2 * d.stroke, 3.0 * d.stroke, "%.1f mm", 1000.0);
             label("Compression ratio");
-            sliderDouble("##cr", &d.compressionRatio, 6.0, 16.0, "%.1f : 1");
+            sliderDouble("##cr", &d.compressionRatio, 6.0, 18.0, "%.1f : 1");
             label("Flywheel mass");
-            sliderDouble("##flywheel", &d.flywheelMass, 1.0, 40.0, "%.1f kg");
+            sliderDouble("##flywheel", &d.flywheelMass, 0.5, 40.0, "%.1f kg");
             ImGui::EndTabItem();
         }
 
-        if (ImGui::BeginTabItem("Valvetrain")) {
-            label("Valves per cylinder");
-            ImGui::SliderInt("##valves", &d.valvesPerCylinder, 2, 5);
-            ImGui::SeparatorText("Intake cam");
-            label("Duration at 0.050\"");
-            sliderDouble("##iduration", &d.intakeDuration, 160 * Deg, 320 * Deg, "%.0f deg", 1.0 / Deg);
-            label("Lift");
-            sliderDouble("##ilift", &d.intakeLift, 0.004, 0.020, "%.1f mm", 1000.0);
-            label("Lobe center (ATDC)");
-            sliderDouble("##icenter", &d.intakeLobeCenter, 90 * Deg, 140 * Deg, "%.0f deg", 1.0 / Deg);
-            ImGui::SeparatorText("Exhaust cam");
-            label("Duration at 0.050\"");
-            sliderDouble("##eduration", &d.exhaustDuration, 160 * Deg, 320 * Deg, "%.0f deg", 1.0 / Deg);
-            label("Lift");
-            sliderDouble("##elift", &d.exhaustLift, 0.004, 0.020, "%.1f mm", 1000.0);
-            label("Lobe center (BTDC)");
-            sliderDouble("##ecenter", &d.exhaustLobeCenter, 90 * Deg, 140 * Deg, "%.0f deg", 1.0 / Deg);
+        if (ImGui::BeginTabItem(d.isRotary() ? "Ports" : "Valvetrain")) {
+            if (d.isRotary()) {
+                ImGui::TextWrapped("Peripheral ports, timed in eccentric shaft degrees. A port is open for at least "
+                    "360 degrees; wider ports stay open longer.");
+                ImGui::SeparatorText("Intake");
+                label("Opens (before TDC)");
+                sliderDouble("##io", &d.intakeOpen, -40 * Deg, 60 * Deg, "%.0f deg", 1.0 / Deg);
+                label("Closes (after BDC)");
+                sliderDouble("##ic", &d.intakeClose, std::max(0.0, 95 * Deg - d.intakeOpen), 120 * Deg, "%.0f deg", 1.0 / Deg);
+                ImGui::SeparatorText("Exhaust");
+                label("Opens (before BDC)");
+                sliderDouble("##eo", &d.exhaustOpen, 30 * Deg, 110 * Deg, "%.0f deg", 1.0 / Deg);
+                label("Closes (after TDC)");
+                sliderDouble("##ec", &d.exhaustClose, std::max(-20 * Deg, 95 * Deg - d.exhaustOpen), 70 * Deg, "%.0f deg", 1.0 / Deg);
+                ImGui::TextDisabled("Overlap %.0f deg", (d.intakeOpen + d.exhaustClose) / Deg);
+            }
+            else {
+                label("Valvetrain");
+                const char *valvetrains[] = { "dohc_bucket", "sohc_finger", "sohc_rocker", "pushrod", "pushrod_roller" };
+                const char *valvetrainNames[] = { "DOHC, bucket tappets", "SOHC, finger followers", "SOHC, rocker arms", "Pushrod (cam in block)", "Pushrod, roller lifters" };
+                int valvetrain = 0;
+                for (int i = 0; i < 5; ++i) if (d.valvetrain == valvetrains[i]) valvetrain = i;
+                if (ImGui::Combo("##valvetrain", &valvetrain, valvetrainNames, 5)) d.valvetrain = valvetrains[valvetrain];
+                label("Valves per cylinder");
+                ImGui::SliderInt("##valves", &d.valvesPerCylinder, 2, 5);
+                ImGui::SeparatorText("Intake cam");
+                label("Duration at 0.050\"");
+                sliderDouble("##iduration", &d.intakeDuration, 160 * Deg, 320 * Deg, "%.0f deg", 1.0 / Deg);
+                label("Lift");
+                sliderDouble("##ilift", &d.intakeLift, 0.004, 0.020, "%.1f mm", 1000.0);
+                label("Lobe center (ATDC)");
+                sliderDouble("##icenter", &d.intakeLobeCenter, 90 * Deg, 140 * Deg, "%.0f deg", 1.0 / Deg);
+                ImGui::SeparatorText("Exhaust cam");
+                label("Duration at 0.050\"");
+                sliderDouble("##eduration", &d.exhaustDuration, 160 * Deg, 320 * Deg, "%.0f deg", 1.0 / Deg);
+                label("Lift");
+                sliderDouble("##elift", &d.exhaustLift, 0.004, 0.020, "%.1f mm", 1000.0);
+                label("Lobe center (BTDC)");
+                sliderDouble("##ecenter", &d.exhaustLobeCenter, 90 * Deg, 140 * Deg, "%.0f deg", 1.0 / Deg);
 
-            const double lsa = (d.intakeLobeCenter + d.exhaustLobeCenter) / 2 / Deg;
-            const double overlap = (d.intakeDuration + d.exhaustDuration) / 2 - (d.intakeLobeCenter + d.exhaustLobeCenter);
-            ImGui::TextDisabled("Lobe separation %.1f deg, overlap at 0.050\" %.0f deg", lsa, overlap / Deg);
+                const double lsa = (d.intakeLobeCenter + d.exhaustLobeCenter) / 2 / Deg;
+                const double overlap = (d.intakeDuration + d.exhaustDuration) / 2 - (d.intakeLobeCenter + d.exhaustLobeCenter);
+                ImGui::TextDisabled("Lobe separation %.1f deg, overlap at 0.050\" %.0f deg", lsa, overlap / Deg);
+            }
             ImGui::EndTabItem();
         }
 
@@ -2221,7 +2686,7 @@ void AppUi::buildDesignerWindow() {
             }
             label("Idle air bypass");
             double idle = (1.0 - d.idleThrottle) * 100.0;
-            if (sliderDouble("##idle", &idle, 0.0, 5.0, "%.2f %%")) d.idleThrottle = 1.0 - idle / 100.0;
+            if (sliderDouble("##idle", &idle, 0.0, 6.0, "%.2f %%")) d.idleThrottle = 1.0 - idle / 100.0;
             label("Intake runner length");
             sliderDouble("##runner", &d.runnerLength, 0.05, 0.8, "%.0f mm", 1000.0);
             label("Exhaust primary length");
@@ -2230,6 +2695,84 @@ void AppUi::buildDesignerWindow() {
             sliderDouble("##exlength", &d.exhaustLength, 0.5, 6.0, "%.2f m");
             label("Exhaust pipe diameter");
             sliderDouble("##exdiameter", &d.exhaustDiameter, 0.025, 0.12, "%.0f mm", 1000.0);
+
+            label("Exhaust sound");
+            const auto &sounds = EngineDesign::exhaustSounds();
+            const char *current = sounds.front().second.c_str();
+            for (const auto &sound : sounds) if (sound.first == d.exhaustSound) current = sound.second.c_str();
+            if (ImGui::BeginCombo("##sound", current)) {
+                for (const auto &sound : sounds) {
+                    if (ImGui::Selectable(sound.second.c_str(), sound.first == d.exhaustSound)) d.exhaustSound = sound.first;
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Forced induction")) {
+            label("Induction");
+            int induction = static_cast<int>(d.induction);
+            const char *inductions[] = {
+                "Naturally aspirated", "Turbocharger", "Twin turbochargers", "Sequential turbochargers",
+                "Roots supercharger", "Twin-screw supercharger", "Centrifugal supercharger" };
+            if (ImGui::Combo("##induction", &induction, inductions, 7)) {
+                d.induction = static_cast<EngineDesign::Induction>(induction);
+                if (d.isBoosted() && d.compressionRatio > 10.5 && !d.isRotary()) d.compressionRatio = 9.5;
+                if (d.isBoosted() && d.lambda > 0.9) d.lambda = 0.85;
+            }
+
+            if (d.isBoosted()) {
+                const double unit = imperial ? 6894.757 : 1e5;
+                label(d.isTurbocharged() ? "Boost (wastegate)" : "Target boost");
+                sliderDouble("##boost", &d.boost, 0.2e5, 3.5e5, imperial ? "%.1f psi" : "%.2f bar", 1.0 / unit);
+                if (!d.isTurbocharged()) {
+                    ImGui::SameLine(); ui::HelpMarker("Superchargers have no wastegate: the drive ratio and the "
+                        "compressor size are chosen for about this boost near the redline.");
+                }
+
+                label("Compressor size");
+                sliderDouble("##scale", &d.compressorScale, 0.5, 2.0, "%.2fx");
+                ImGui::SameLine(); ui::HelpMarker("Relative to a compressor sized for the boost at the redline. "
+                    "Larger compressors flow more but spool later.");
+
+                if (d.isTurbocharged()) {
+                    label("Turbine housing A/R");
+                    sliderDouble("##ar", &d.turbineAr, 0.35, 1.4, "%.2f");
+                    ImGui::SameLine(); ui::HelpMarker("Smaller housings spool sooner but restrict the exhaust at high speed.");
+                    label("Ball bearings");
+                    ImGui::Checkbox("##ball", &d.ballBearings);
+                }
+                else {
+                    label("Drive ratio");
+                    bool autoRatio = d.driveRatio <= 0;
+                    if (ImGui::Checkbox("Automatic##ratio", &autoRatio)) {
+                        d.driveRatio = autoRatio ? 0.0 : (d.induction == EngineDesign::Induction::Centrifugal ? 10.0 : 2.2);
+                    }
+                    if (!autoRatio) {
+                        label("  Compressor / crank speed");
+                        sliderDouble("##ratio", &d.driveRatio, 0.8,
+                            (d.induction == EngineDesign::Induction::Centrifugal) ? 20.0 : 4.0, "%.2f : 1");
+                    }
+                }
+
+                if (d.induction != EngineDesign::Induction::Roots && d.induction != EngineDesign::Induction::TwinScrew) {
+                    label("Blow-off valve");
+                    ImGui::Checkbox("##bov", &d.blowoffValve);
+                }
+
+                label("Intercooler effectiveness");
+                sliderDouble("##ic", &d.intercoolerEffectiveness, 0.0, 0.95, "%.0f %%", 100.0);
+
+                if (d.compressionRatio > 10.5 && !d.isRotary()) {
+                    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ui::WarningColor()),
+                        "Boosted engines usually run 8.5-10.5 : 1 compression (knock isn't simulated).");
+                }
+            }
+            else {
+                ImGui::TextWrapped("Turbochargers are driven by the exhaust and need time to spool up; "
+                    "superchargers are driven by the crankshaft and boost immediately. "
+                    "Pick one above to set it up.");
+            }
             ImGui::EndTabItem();
         }
 
@@ -2239,13 +2782,14 @@ void AppUi::buildDesignerWindow() {
             label("Maximum advance");
             sliderDouble("##maxadv", &d.maxAdvance, d.idleAdvance, 50 * Deg, "%.0f deg BTDC", 1.0 / Deg);
             label("Full advance at");
-            sliderDouble("##advrpm", &d.maxAdvanceRpm, 1500, 10000, "%.0f rpm");
+            sliderDouble("##advrpm", &d.maxAdvanceRpm, 1500, 12000, "%.0f rpm");
             label("Redline");
-            sliderDouble("##redline", &d.redline, 2000, 16000, "%.0f rpm");
+            sliderDouble("##redline", &d.redline, 2000, 18000, "%.0f rpm");
 
             ImGui::SeparatorText("Physics");
             label("Engineering model");
             ImGui::Checkbox("##engineering", &d.engineering);
+            ImGui::SameLine();
             ui::HelpMarker("Real-gas thermodynamics, flame propagation, heat transfer and friction models. "
                 "Slower than the legacy model.");
             label("Fuel");
@@ -2268,13 +2812,37 @@ void AppUi::buildDesignerWindow() {
     ImGui::Separator();
     if (ImGui::Button("Build and run")) generateDesign(true);
     ImGui::SameLine();
-    if (ImGui::Button("Save only")) generateDesign(false);
+    if (ImGui::Button("Save")) generateDesign(false);
+    ImGui::SameLine();
+    if (ImGui::Button("Save as...")) {
+        std::snprintf(m_saveAsName, sizeof(m_saveAsName), "%s", d.name.c_str());
+        ImGui::OpenPopup("Save engine as");
+    }
     ImGui::SameLine();
     if (ImGui::Button("Copy script")) ImGui::SetClipboardText(generateEngineScript(m_design).c_str());
     ImGui::SameLine();
+    if (ImGui::Button("Library...")) m_showLibrary = true;
+    ImGui::SameLine();
     if (ImGui::Button("Reset")) {
         m_design = EngineDesign();
+        m_designPath.clear();
         m_designStatus.clear();
+    }
+
+    if (ImGui::BeginPopupModal("Save engine as", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Name");
+        ImGui::SetNextItemWidth(320 * s);
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        const bool enter = ImGui::InputText("##saveas", m_saveAsName, sizeof(m_saveAsName), ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::TextDisabled("Saved as %s.mr in My engines", designFileName(m_saveAsName).c_str());
+        if (ImGui::Button("Save", ImVec2(120 * s, 0)) || enter) {
+            d.name = m_saveAsName;
+            generateDesign(false);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120 * s, 0))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
     }
 
     if (!m_designStatus.empty()) {
@@ -2282,7 +2850,7 @@ void AppUi::buildDesignerWindow() {
             "%s", m_designStatus.c_str());
     }
     else {
-        ImGui::TextDisabled("Designs are saved as engine scripts that can be edited by hand.");
+        ImGui::TextDisabled("Designs are saved as engine scripts (My engines) that can be edited by hand.");
     }
 
     ImGui::End();
@@ -2360,6 +2928,35 @@ void AppUi::buildTuningWindow() {
         if (sliderDouble("##friction", &friction, 0.0, 3.0, "%.2fx")) m_engine->setFrictionMultiplier(friction);
     }
 
+    if (ForcedInduction *fi = m_engine->getForcedInduction()) {
+        ImGui::SeparatorText(fi->getDescription().c_str());
+        const bool imperial = (pressureUnits() == "inHg" || pressureUnits() == "psi");
+        if (fi->isTurbocharger()) {
+            double boost = fi->getBoostTarget();
+            label("Boost target (wastegate)");
+            const double unit = imperial ? units::pressure(1.0, units::psi) : units::pressure(1.0, units::bar);
+            if (sliderDouble("##boost", &boost, 0.0, units::pressure(3.0, units::bar), imperial ? "%.1f psi" : "%.2f bar", 1.0 / unit)) {
+                fi->setBoostTarget(boost);
+            }
+        }
+        else {
+            double ratio = fi->getDriveRatio();
+            label("Drive ratio");
+            const double maxRatio = (fi->getType() == ForcedInduction::Type::Centrifugal) ? 20.0 : 4.0;
+            if (sliderDouble("##driveratio", &ratio, 0.5, maxRatio, "%.2f : 1")) fi->setDriveRatio(ratio);
+        }
+
+        double intercooler = fi->getIntercoolerEffectiveness();
+        label("Intercooler effectiveness");
+        if (sliderDouble("##intercooler", &intercooler, 0.0, 1.0, "%.0f %%", 100.0)) fi->setIntercoolerEffectiveness(intercooler);
+
+        if (!fi->isPositiveDisplacement()) {
+            bool blowoff = fi->hasBlowoffValve();
+            label("Blow-off valve");
+            if (ImGui::Checkbox("##blowoff", &blowoff)) fi->setBlowoffValve(blowoff);
+        }
+    }
+
     ImGui::SeparatorText("Sound");
     Synthesizer::AudioParameters audio = m_simulator->synthesizer().getAudioParameters();
     bool audioChanged = false;
@@ -2368,6 +2965,9 @@ void AppUi::buildTuningWindow() {
     label("High frequency gain [C]"); audioChanged |= ImGui::SliderFloat("##dff", &audio.dF_F_mix, 0.0f, 0.1f, "%.4f");
     label("Low frequency noise [V]"); audioChanged |= ImGui::SliderFloat("##airnoise", &audio.airNoise, 0.0f, 1.0f, "%.2f");
     label("High frequency noise [B]"); audioChanged |= ImGui::SliderFloat("##inputnoise", &audio.inputSampleNoise, 0.0f, 1.0f, "%.2f");
+    if (m_engine->getForcedInduction() != nullptr) {
+        label("Turbo / supercharger sound"); audioChanged |= ImGui::SliderFloat("##fisound", &audio.forcedInductionVolume, 0.0f, 3.0f, "%.2f");
+    }
     if (audioChanged) m_simulator->synthesizer().setAudioParameters(audio);
 
     ImGui::SeparatorText("Simulation");
@@ -2398,7 +2998,15 @@ void AppUi::buildTuningWindow() {
         restored.dF_F_mix = defaults.highFrequencyGain;
         restored.airNoise = defaults.airNoise;
         restored.inputSampleNoise = defaults.inputNoise;
+        restored.forcedInductionVolume = 1.0f;
         m_simulator->synthesizer().setAudioParameters(restored);
+
+        if (ForcedInduction *fi = m_engine->getForcedInduction()) {
+            fi->setBoostTarget(defaults.boostTarget);
+            fi->setDriveRatio(defaults.driveRatio);
+            fi->setIntercoolerEffectiveness(defaults.intercoolerEffectiveness);
+            fi->setBlowoffValve(defaults.blowoffValve);
+        }
     }
 
     ImGui::End();
@@ -2440,7 +3048,9 @@ void AppUi::buildHelpWindow() {
         { "Enter", "Reload the engine script" },
         { "F5", "Console" },
         { "F8", "Check for / install updates" },
-        { "Ctrl+,", "Settings" },
+        { SettingsShortcut, "Settings" },
+        { LibraryShortcut, "Engine library (presets and saved engines)" },
+        { DesignerShortcut, "Engine designer" },
         { "Esc", "Quit" },
     };
 

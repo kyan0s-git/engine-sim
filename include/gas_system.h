@@ -131,6 +131,10 @@ class GasSystem {
             double molarMass);
         void dissipateExcessVelocity();
 
+        // Adds n moles of gas at temperature T that is pushed into the system
+        // (carrying its enthalpy in the engineering model)
+        void inject(double n, double T, const Mix &mix);
+
         void updateVelocity(double dt, double beta = 1.0);
         void dissipateVelocity(double dt, double timeConstant);
 

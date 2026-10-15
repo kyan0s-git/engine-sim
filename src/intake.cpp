@@ -1,5 +1,7 @@
 #include "../include/intake.h"
 
+#include "../include/forced_induction.h"
+
 #include "../include/units.h"
 #include "../include/utilities.h"
 
@@ -21,6 +23,7 @@ Intake::Intake() {
     m_fuel = nullptr;
     m_lambda = 1.0;
     m_chargeTemperature = units::celcius(25.0);
+    m_forcedInduction = nullptr;
 }
 
 Intake::~Intake() {
@@ -141,17 +144,34 @@ void Intake::process(double dt) {
     flowParams.direction_y = -1.0;
     flowParams.dt = dt;
 
-    m_atmosphere.reset(units::pressure(1.0, units::atm), T_charge, fuelAirMix);
-    flowParams.system_0 = &m_atmosphere;
-    flowParams.system_1 = &m_system;
-    flowParams.k_flow = flowAttenuation * m_inputFlowK;
-    m_flow = m_system.flow(flowParams);
+    double idleCircuitFlow = 0;
+    if (m_forcedInduction != nullptr) {
+        // Boosted: the throttle and the idle circuit draw from the charge
+        // air, which already carries the mixture
+        GasSystem *charge = m_forcedInduction->getChargeSystem();
+        flowParams.crossSectionArea_0 = m_crossSectionArea;
+        flowParams.system_0 = charge;
+        flowParams.system_1 = &m_system;
+        flowParams.k_flow = flowAttenuation * m_inputFlowK;
+        m_flow = GasSystem::flow(flowParams);
 
-    m_atmosphere.reset(units::pressure(1.0, units::atm), T_charge, fuelMix);
-    flowParams.system_0 = &m_atmosphere;
-    flowParams.system_1 = &m_system;
-    flowParams.k_flow = m_idleFlowK;
-    const double idleCircuitFlow = m_system.flow(flowParams);
+        flowParams.k_flow = m_idleFlowK;
+        idleCircuitFlow = GasSystem::flow(flowParams);
+        fuelMix = fuelAirMix;
+    }
+    else {
+        m_atmosphere.reset(units::pressure(1.0, units::atm), T_charge, fuelAirMix);
+        flowParams.system_0 = &m_atmosphere;
+        flowParams.system_1 = &m_system;
+        flowParams.k_flow = flowAttenuation * m_inputFlowK;
+        m_flow = m_system.flow(flowParams);
+
+        m_atmosphere.reset(units::pressure(1.0, units::atm), T_charge, fuelMix);
+        flowParams.system_0 = &m_atmosphere;
+        flowParams.system_1 = &m_system;
+        flowParams.k_flow = m_idleFlowK;
+        idleCircuitFlow = m_system.flow(flowParams);
+    }
 
     m_system.dissipateExcessVelocity();
     m_system.updateVelocity(dt, m_velocityDecay);

@@ -35,6 +35,7 @@ Engine::Engine() {
     m_redline = 0;
 
     m_throttle = nullptr;
+    m_forcedInduction = nullptr;
     m_throttleValue = 0.0;
 
     m_initialSimulationFrequency = 10000.0;
@@ -119,6 +120,24 @@ CombustionChamber *Engine::createCombustionChamber(int index) {
     return new CombustionChamber;
 }
 
+void Engine::setForcedInduction(ForcedInduction *forcedInduction) {
+    m_forcedInduction = forcedInduction;
+    if (forcedInduction == nullptr) return;
+
+    forcedInduction->setCrankshaft(getOutputCrankshaft());
+    forcedInduction->setExhaustSystemCount(m_exhaustSystemCount);
+    for (int i = 0; i < m_intakeCount; ++i) {
+        m_intakes[i].setForcedInduction(forcedInduction);
+        forcedInduction->addIntake(&m_intakes[i]);
+    }
+
+    if (forcedInduction->isTurbocharger()) {
+        for (int i = 0; i < m_exhaustSystemCount; ++i) {
+            m_exhaustSystems[i].setForcedInduction(forcedInduction);
+        }
+    }
+}
+
 void Engine::destroy() {
     for (int i = 0; i < m_crankshaftCount; ++i) {
         m_crankshafts[i].destroy();
@@ -165,6 +184,7 @@ void Engine::destroy() {
     m_intakes = nullptr;
     m_combustionChambers = nullptr;
     m_throttle = nullptr;
+    m_forcedInduction = nullptr;
 
     for (auto it = m_ownedObjects.rbegin(); it != m_ownedObjects.rend(); ++it) {
         it->second(it->first);

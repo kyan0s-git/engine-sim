@@ -404,6 +404,30 @@ namespace es_script {
         double m_angle = 0.0;
     };
 
+    class AddForcedInductionNode : public Node {
+    public:
+        AddForcedInductionNode() { /* void */ }
+        virtual ~AddForcedInductionNode() { /* void */ }
+
+    protected:
+        virtual void registerInputs() {
+            addInput("engine", &m_engine, InputTarget::Type::Object);
+            addInput("forced_induction", &m_forcedInduction, InputTarget::Type::Object);
+
+            Node::registerInputs();
+        }
+
+        virtual void _evaluate() {
+            readAllInputs();
+
+            m_engine->addForcedInduction(m_forcedInduction);
+        }
+
+    protected:
+        ForcedInductionNode *m_forcedInduction = nullptr;
+        EngineNode *m_engine = nullptr;
+    };
+
     class AddIgnitionModuleNode : public Node {
     public:
         AddIgnitionModuleNode() { /* void */ }

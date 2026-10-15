@@ -335,6 +335,27 @@ int main(int argc, char *argv[]) {
             m.peakPressure / bar, m.peakPressureAngle, m.peakTemperature, m.heatLossFraction);
         std::fflush(stdout);
 
+        if (const ForcedInduction *fi = engine->getForcedInduction()) {
+            double exhaust = 0;
+            for (int i = 0; i < engine->getExhaustSystemCount(); ++i) {
+                exhaust += engine->getExhaustSystem(i)->getSystem()->pressure();
+            }
+            exhaust /= std::max(engine->getExhaustSystemCount(), 1);
+
+            std::fprintf(stderr,
+                "  %5.0f rpm %s: boost %6.1f kPa, shaft %6.1f krpm, charge %5.1f C (compressor %5.1f C), "
+                "exhaust %6.1f kPa, wastegate %.2f, turbine %5.1f kW, drive %5.1f kW\n",
+                average.rpm, fi->getDescription().c_str(),
+                units::convert(fi->getBoost(), units::kPa),
+                fi->getShaftSpeed() * 60 / (2 * constants::pi) / 1000,
+                fi->getChargeTemperature() - 273.15,
+                fi->getCompressorOutletTemperature() - 273.15,
+                units::convert(exhaust, units::kPa),
+                fi->getWastegateOpening(),
+                fi->getTurbinePower() / 1000,
+                fi->getDrivePower() / 1000);
+        }
+
         if (options.perCylinder) {
             // Last cycle of every cylinder (to stderr so the CSV stays clean)
             for (int i = 0; i < engine->getCylinderCount(); ++i) {

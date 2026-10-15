@@ -14,6 +14,8 @@
 Synthesizer::Synthesizer() {
     m_inputChannels = nullptr;
     m_inputChannelCount = 0;
+    m_auxChannelCount = 0;
+    m_totalChannelCount = 0;
     m_inputBufferSize = 0;
     m_inputWriteOffset = 0.0;
     m_inputSamplesRead = 0;
@@ -31,6 +33,11 @@ Synthesizer::Synthesizer() {
 
     m_latency = 0;
     m_noiseState = 0x9E3779B9u;
+
+    m_whinePhase = 0;
+    m_mixEnvelope = 0;
+    m_hissLow = 0;
+    m_hissHigh = 0;
 }
 
 Synthesizer::~Synthesizer() {
@@ -41,6 +48,8 @@ Synthesizer::~Synthesizer() {
 
 void Synthesizer::initialize(const Parameters &p) {
     m_inputChannelCount = p.inputChannelCount;
+    m_auxChannelCount = p.auxChannelCount;
+    m_totalChannelCount = p.inputChannelCount + p.auxChannelCount;
     m_inputBufferSize = p.inputBufferSize;
     m_inputWriteOffset = p.inputBufferSize;
     m_audioBufferSize = p.audioBufferSize;
@@ -53,8 +62,8 @@ void Synthesizer::initialize(const Parameters &p) {
     m_inputWriteOffset = 0;
 
     m_audioBuffer.initialize(p.audioBufferSize);
-    m_inputChannels = new InputChannel[p.inputChannelCount];
-    for (int i = 0; i < p.inputChannelCount; ++i) {
+    m_inputChannels = new InputChannel[m_totalChannelCount];
+    for (int i = 0; i < m_totalChannelCount; ++i) {
         m_inputChannels[i].transferBuffer = new float[p.inputBufferSize];
         m_inputChannels[i].data.initialize(p.inputBufferSize);
     }
@@ -131,11 +140,13 @@ void Synthesizer::endAudioRenderingThread() {
 void Synthesizer::destroy() {
     m_audioBuffer.destroy();
 
-    for (int i = 0; i < m_inputChannelCount; ++i) {
+    for (int i = 0; i < m_totalChannelCount; ++i) {
         m_inputChannels[i].data.destroy();
         delete[] m_inputChannels[i].transferBuffer;
         m_inputChannels[i].transferBuffer = nullptr;
+    }
 
+    for (int i = 0; i < m_inputChannelCount; ++i) {
         m_filters[i].convolution.destroy();
         m_filters[i].jitterFilter.destroy();
     }
@@ -147,6 +158,8 @@ void Synthesizer::destroy() {
     m_filters = nullptr;
 
     m_inputChannelCount = 0;
+    m_auxChannelCount = 0;
+    m_totalChannelCount = 0;
 }
 
 int Synthesizer::readAudioOutput(int samples, int16_t *buffer) {
@@ -180,8 +193,9 @@ void Synthesizer::writeInput(const double *data) {
         m_inputWriteOffset -= (double)m_inputBufferSize;
     }
 
-    for (int i = 0; i < m_inputChannelCount; ++i) {
+    for (int i = 0; i < m_totalChannelCount; ++i) {
         RingBuffer<float> &buffer = m_inputChannels[i].data;
+        const bool aux = (i >= m_inputChannelCount);
 
         // Never let the ring overflow (its size would wrap around); drop
         // the oldest input instead. The simulator keeps the queue far below
@@ -201,7 +215,9 @@ void Synthesizer::writeInput(const double *data) {
             const double f = s / distance;
             const double sample = lastInputSample * (1 - f) + data[i] * f;
 
-            buffer.write(m_filters[i].antialiasing.fast_f(static_cast<float>(sample)));
+            buffer.write(aux
+                ? static_cast<float>(sample)
+                : static_cast<float>(m_filters[i].antialiasing.fast_f(sample)));
         }
 
         m_inputChannels[i].lastInputSample = data[i];
@@ -260,7 +276,7 @@ void Synthesizer::renderAudio() {
 
         std::lock_guard<std::mutex> lock(m_inputLock);
         n = std::min(space, static_cast<int>(m_inputChannels[0].data.size()));
-        for (int i = 0; i < m_inputChannelCount; ++i) {
+        for (int i = 0; i < m_totalChannelCount; ++i) {
             m_inputChannels[i].data.read(n, m_inputChannels[i].transferBuffer);
             m_inputChannels[i].data.removeBeginning(n);
         }
@@ -327,6 +343,8 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
         }
     }
 
+    renderForcedInduction(n, parameters);
+
     m_levelingFilter.p_target = parameters.levelerTarget;
     for (int j = 0; j < n; ++j) {
         const float signal = m_antialiasing.fast_f(m_mixBuffer[j]);
@@ -341,6 +359,48 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
         }
 
         m_renderedAudio[j] = static_cast<int16_t>(r_int);
+    }
+}
+
+void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters) {
+    if (m_auxChannelCount < 3) return;
+
+    const float *frequency = m_inputChannels[m_inputChannelCount + 0].transferBuffer;
+    const float *whine = m_inputChannels[m_inputChannelCount + 1].transferBuffer;
+    const float *blowoff = m_inputChannels[m_inputChannelCount + 2].transferBuffer;
+
+    const float volume = parameters.forcedInductionVolume;
+    const float envelopeDecay = 1.0f - 1.0f / (0.3f * m_audioSampleRate);
+    const float floor = 0.1f * parameters.levelerTarget;
+    const double twoPi = 2 * 3.14159265358979323846;
+    const double nyquist = 0.45 * m_audioSampleRate;
+
+    for (int j = 0; j < n; ++j) {
+        // The forced induction sounds follow the loudness of the engine
+        const float a = std::abs(m_mixBuffer[j]);
+        m_mixEnvelope = std::max(a * (1 - envelopeDecay) + m_mixEnvelope * envelopeDecay, 0.0f);
+
+        float out = 0;
+        const double f = std::min(static_cast<double>(std::max(frequency[j], 0.0f)), nyquist / 2);
+        m_whinePhase += twoPi * f / m_audioSampleRate;
+        if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
+
+        const float whineLevel = std::max(whine[j], 0.0f);
+        if (whineLevel > 0) {
+            const float tone = static_cast<float>(
+                std::sin(m_whinePhase) + 0.35 * std::sin(2 * m_whinePhase));
+            out += whineLevel * tone * (0.8f * m_mixEnvelope + floor * 0.3f);
+        }
+
+        // Blow-off: band-limited hiss
+        const float r = noise();
+        m_hissLow += 0.35f * (r - m_hissLow);
+        m_hissHigh += 0.02f * (m_hissLow - m_hissHigh);
+        const float hiss = m_hissLow - m_hissHigh;
+        const float blowoffLevel = std::max(blowoff[j], 0.0f);
+        out += blowoffLevel * hiss * std::max(1.2f * m_mixEnvelope, 2.5f * floor);
+
+        m_mixBuffer[j] += volume * out;
     }
 }
 

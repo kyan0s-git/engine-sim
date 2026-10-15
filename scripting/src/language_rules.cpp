@@ -61,6 +61,8 @@ void es_script::LanguageRules::registerBuiltinNodeTypes() {
     registerBuiltinType<piranha::ChannelNode>(
         "__engine_sim__ignition_module_channel", &es_script::ObjectChannel::IgnitionModuleChannel);
     registerBuiltinType<piranha::ChannelNode>(
+        "__engine_sim__forced_induction_channel", &es_script::ObjectChannel::ForcedInductionChannel);
+    registerBuiltinType<piranha::ChannelNode>(
         "__engine_sim__ignition_wire_channel", &es_script::ObjectChannel::IgnitionWireChannel);
     registerBuiltinType<piranha::ChannelNode>(
         "__engine_sim__fuel_channel", &es_script::ObjectChannel::FuelChannel);
@@ -145,6 +147,7 @@ void es_script::LanguageRules::registerBuiltinNodeTypes() {
     registerBuiltinType<SetCylinderHeadNode>("__engine_sim__set_cylinder_head");
     registerBuiltinType<ConnectIgnitionWireNode>("__engine_sim__connect_ignition_wire");
     registerBuiltinType<AddIgnitionModuleNode>("__engine_sim__add_ignition_module");
+    registerBuiltinType<AddForcedInductionNode>("__engine_sim__add_forced_induction");
     registerBuiltinType<k_28inH2ONode>("__engine_sim__k_28inH2O");
     registerBuiltinType<k_32inH2ONode>("__engine_sim__k_32inH2O");
     registerBuiltinType<k_CarbNode>("__engine_sim__k_carb");
@@ -170,6 +173,7 @@ void es_script::LanguageRules::registerBuiltinNodeTypes() {
     registerBuiltinType<ExhaustSystemNode>("__engine_sim__exhaust_system");
     registerBuiltinType<IntakeNode>("__engine_sim__intake");
     registerBuiltinType<IgnitionModuleNode>("__engine_sim__ignition_module");
+    registerBuiltinType<ForcedInductionNode>("__engine_sim__forced_induction");
     registerBuiltinType<IgnitionWireNode>("__engine_sim__ignition_wire");
     registerBuiltinType<FuelNode>("__engine_sim__fuel");
     registerBuiltinType<ImpulseResponseNode>("__engine_sim__impulse_response");

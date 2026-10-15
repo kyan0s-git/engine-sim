@@ -4,31 +4,66 @@
 #include <string>
 #include <vector>
 
-// Parametric description of a piston engine. generateEngineScript() turns it
-// into an engine script (with a vehicle and transmission) that the
-// application can load like any other script. All values are in SI units
-// (m, m^3, rad, kg) unless noted.
+// Parametric description of an engine. generateEngineScript() turns it into
+// an engine script (with a vehicle and transmission) that the application can
+// load like any other script. All values are in SI units (m, m^3, rad, kg,
+// Pa) unless noted.
 struct EngineDesign {
     enum class Layout {
         Inline,
         V,
-        Flat
+        Flat,           // boxer
+        W,              // three banks (broad arrow) or four (two narrow V's)
+        Rotary          // Wankel
+    };
+
+    enum class Induction {
+        Natural,
+        Turbo,
+        TwinTurbo,
+        SequentialTurbo,
+        Roots,
+        TwinScrew,
+        Centrifugal
     };
 
     std::string name = "Custom engine";
 
+    // Shown in the engine library
+    std::string description;
+
     // Configuration
     Layout layout = Layout::Inline;
     int cylinders = 4;
-    double bankAngle = 1.5707963267948966;      // V engines [rad]
+    double bankAngle = 1.5707963267948966;      // V: between the banks; W: between the outer banks [rad]
+    int wBanks = 4;                             // W engines: 3 or 4 banks
+    double vrAngle = 0.2617993877991494;        // four-bank W: between the banks of each half [rad]
 
-    // Geometry
+    // Firing order as cylinder numbers separated by dashes ("1-8-7-2-6-5-4-3");
+    // empty for an even firing order chosen automatically. Cylinders are
+    // numbered bank by bank: the first bank holds 1..n/banks.
+    std::string firingOrderText;
+
+    // Geometry (piston engines)
     double bore = 0.086;
     double stroke = 0.086;
     double rodLength = 0.145;
     double compressionRatio = 10.5;
 
+    // Rotary engines
+    int rotors = 2;
+    double eccentricity = 0.015;
+    double generatingRadius = 0.105;
+    double rotorWidth = 0.080;
+
+    // Port timing of rotary engines (eccentric shaft angles)
+    double intakeOpen = 0.1570796;              // before TDC [rad]
+    double intakeClose = 1.5184364;             // after BDC
+    double exhaustOpen = 1.5707963;             // before BDC
+    double exhaustClose = 0.1047198;            // after TDC
+
     // Valvetrain (crank angles)
+    std::string valvetrain = "dohc_bucket";     // friction model: dohc_bucket, sohc_finger, sohc_rocker, pushrod (+ "_roller")
     int valvesPerCylinder = 4;
     double intakeDuration = 4.10;               // at 0.050" lift [rad]
     double exhaustDuration = 4.10;
@@ -44,6 +79,17 @@ struct EngineDesign {
     double primaryLength = 0.5;
     double exhaustLength = 2.5;
     double exhaustDiameter = 0.055;
+    std::string exhaustSound = "default_0";     // see exhaustSounds()
+
+    // Forced induction
+    Induction induction = Induction::Natural;
+    double boost = 0.8e5;                       // target (gauge) [Pa]
+    double turbineAr = 0.64;
+    double compressorScale = 1.0;               // compressor size relative to the automatic sizing
+    bool ballBearings = false;
+    bool blowoffValve = true;
+    double intercoolerEffectiveness = 0.7;
+    double driveRatio = 0;                      // superchargers, 0 = automatic
 
     // Ignition (crank angles before TDC)
     double idleAdvance = 0.21;                  // 12 degrees
@@ -66,8 +112,14 @@ struct EngineDesign {
     double vehicleMass = 1400;                  // [kg]
 
     // Derived quantities
+    bool isRotary() const { return layout == Layout::Rotary; }
+    bool isBoosted() const { return induction != Induction::Natural; }
+    bool isTurbocharged() const;
+    int bankCount() const;
+    int cylindersPerBank() const { return cylinders / bankCount(); }
+    std::vector<double> bankAngles() const;     // [rad] from vertical
     double displacement() const;
-    double cylinderDisplacement() const;
+    double cylinderDisplacement() const;        // rotary: per face
 
     // Clamps values to sensible ranges; returns false if something had to be
     // changed
@@ -75,6 +127,16 @@ struct EngineDesign {
 
     // Firing order (1-based cylinder numbers) used by the generated script
     std::vector<int> firingOrder() const;
+
+    // Parses a firing order; returns false unless it lists every cylinder
+    // from 1 to cylinders exactly once
+    static bool parseFiringOrder(const std::string &text, int cylinders, std::vector<int> *order);
+
+    static const char *layoutName(Layout layout);
+    static const char *inductionName(Induction induction);
+
+    // Exhaust sounds: script names and descriptions
+    static const std::vector<std::pair<std::string, std::string>> &exhaustSounds();
 };
 
 // Script text for the design
@@ -86,5 +148,8 @@ bool readEngineDesign(const std::string &scriptText, EngineDesign *design);
 
 // Short identifier made of letters, digits and underscores
 std::string designFileName(const std::string &name);
+
+// Engines that come with the application, as designs
+const std::vector<EngineDesign> &builtinEnginePresets();
 
 #endif /* ATG_ENGINE_SIM_ENGINE_DESIGN_H */

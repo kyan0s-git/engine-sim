@@ -86,11 +86,13 @@ void Simulator::startFrame(double dt) {
     m_currentIteration = 0;
     m_synthesizer.setInputSampleRate(m_simulationFrequency * m_simulationSpeed);
 
-    // Simulate enough to produce the frame's worth of audio plus a share of
-    // the difference between the audio queued in the synthesizer and the
-    // target, so the queue neither runs dry (crackling) nor grows. The step
-    // count follows the measured frame time; it used to assume at least
-    // 30 frames per second, which starved the audio on slower frames.
+    // Simulate the elapsed time, sped up or slowed down a little to keep the
+    // audio queued in the synthesizer at its target: too little crackles,
+    // too much adds latency. The correction is proportional to the elapsed
+    // time so that it is the same however often this is called. (It used
+    // to correct half of the error every frame; the queue fluctuates as
+    // the audio is read in blocks, so the speed of the simulation jittered
+    // from frame to frame.)
     const double timestep = getTimestep();
     const double frameTime = std::clamp(dt, 0.0, 0.1);
     const double target = getSynthesizerInputLatencyTarget();
@@ -106,9 +108,18 @@ void Simulator::startFrame(double dt) {
         audioTime = frameTime;
     }
     else {
-        audioTime = std::clamp(frameTime + 0.5 * (target - latency), 0.0, 0.15);
+        const double error = target - latency;
+
+        // About to run dry: catch up quickly
+        const double timeConstant = (latency < 0.4 * target) ? 0.1 : 0.6;
+        const double correction = std::clamp(error * frameTime / timeConstant, -0.5 * frameTime, 0.5 * frameTime + 0.01);
+        audioTime = std::clamp(frameTime + correction, 0.0, 0.15);
     }
-    m_steps = static_cast<int>(std::round(audioTime * m_simulationSpeed / timestep));
+
+    // Fractional steps carry over to the next call
+    const double steps = audioTime * m_simulationSpeed / timestep + m_stepRemainder;
+    m_steps = static_cast<int>(std::floor(steps));
+    m_stepRemainder = std::clamp(steps - m_steps, 0.0, 1.0);
 
     if (m_steps > 0) {
         for (int i = 0; i < m_engine->getIntakeCount(); ++i) {
@@ -237,6 +248,7 @@ void Simulator::initializeSynthesizer() {
     synthParams.audioSampleRate = 44100;
     synthParams.inputBufferSize = 44100;
     synthParams.inputChannelCount = m_engine->getExhaustSystemCount();
+    synthParams.auxChannelCount = 3;
     synthParams.inputSampleRate = static_cast<float>(getSimulationFrequency());
     m_synthesizer.initialize(synthParams);
 }

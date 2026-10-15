@@ -124,6 +124,7 @@ private:
     int m_lastDynoTorqueSample;
 
     double m_filteredEngineSpeed;
+    double m_stepRemainder = 0;
 
     int m_steps;
 };

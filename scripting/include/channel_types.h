@@ -27,6 +27,7 @@ namespace es_script {
         static const piranha::ChannelType ThrottleChannel;
         static const piranha::ChannelType WankelRotorChannel;
         static const piranha::ChannelType WankelPeripheralPortChannel;
+        static const piranha::ChannelType ForcedInductionChannel;
     };
 
     // Only the specializations below are defined; using an unregistered type
@@ -62,6 +63,7 @@ namespace es_script {
     ASSIGN_CHANNEL_TYPE(ThrottleNode, ThrottleChannel);
     ASSIGN_CHANNEL_TYPE(WankelRotorNode, WankelRotorChannel);
     ASSIGN_CHANNEL_TYPE(WankelPeripheralPortNode, WankelPeripheralPortChannel);
+    ASSIGN_CHANNEL_TYPE(ForcedInductionNode, ForcedInductionChannel);
 
 } /* namespace es_script */
 

@@ -7,6 +7,7 @@
 #include "cylinder_bank_node.h"
 #include "ignition_module_node.h"
 #include "engine_context.h"
+#include "forced_induction_node.h"
 #include "fuel_node.h"
 #include "throttle_nodes.h"
 
@@ -122,7 +123,8 @@ namespace es_script {
             }
 
             m_ignitionModule->generate(engine, &context);
-            
+            generateForcedInduction(engine);
+
             Function *meanPistonSpeedToTurbulence = engine->addOwnedObject(new Function);
             meanPistonSpeedToTurbulence->initialize(30, 1);
             for (int i = 0; i < 30; ++i) {
@@ -184,6 +186,12 @@ namespace es_script {
             }
         }
 
+        void generateForcedInduction(Engine *engine) const {
+            if (m_forcedInduction != nullptr) {
+                m_forcedInduction->generate(engine);
+            }
+        }
+
         void checkFuel(Engine *engine) const {
             if (!engine->getFuel()->isKnownType()) {
                 engine->addWarning("Unknown fuel type; using gasoline");
@@ -206,6 +214,10 @@ namespace es_script {
 
         void addIgnitionModule(IgnitionModuleNode *ignitionModule) {
             m_ignitionModule = ignitionModule;
+        }
+
+        void addForcedInduction(ForcedInductionNode *forcedInduction) {
+            m_forcedInduction = forcedInduction;
         }
 
     protected:
@@ -259,6 +271,7 @@ namespace es_script {
 
         ThrottleNode *m_throttle = nullptr;
         IgnitionModuleNode *m_ignitionModule = nullptr;
+        ForcedInductionNode *m_forcedInduction = nullptr;
         FuelNode *m_fuel = nullptr;
 
         Engine::Parameters m_parameters;

@@ -82,9 +82,11 @@ add_library(engine-sim STATIC
     src/dynamometer.cpp
     src/engine.cpp
     src/engine_design.cpp
+    src/engine_presets.cpp
     src/engine_friction.cpp
     src/engine_metrics.cpp
     src/exhaust_system.cpp
+    src/forced_induction.cpp
     src/feedback_comb_filter.cpp
     src/filter.cpp
     src/fuel.cpp
@@ -140,6 +142,7 @@ add_library(engine-sim STATIC
     include/engine_friction.h
     include/engine_metrics.h
     include/exhaust_system.h
+    include/forced_induction.h
     include/feedback_comb_filter.h
     include/filter.h
     include/fuel.h
@@ -212,6 +215,7 @@ if (PIRANHA_ENABLED)
         scripting/include/cylinder_head_node.h
         scripting/include/engine_context.h
         scripting/include/engine_node.h
+        scripting/include/forced_induction_node.h
         scripting/include/engine_sim.h
         scripting/include/exhaust_system_node.h
         scripting/include/function_node.h

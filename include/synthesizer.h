@@ -30,10 +30,17 @@ class Synthesizer {
             float levelerTarget = 30000.0f;
             float levelerMaxGain = 1.9f;
             float levelerMinGain = 0.00001f;
+
+            // Turbocharger/supercharger whine and blow-off noise
+            float forcedInductionVolume = 1.0f;
         };
 
         struct Parameters {
             int inputChannelCount = 1;
+
+            // Control channels written after the exhaust channels:
+            // whine frequency [Hz], whine level [0, 1], blow-off level [0, 1]
+            int auxChannelCount = 0;
             int inputBufferSize = 1024;
             int audioBufferSize = 44100;
             float inputSampleRate = 10000;
@@ -102,6 +109,8 @@ class Synthesizer {
         InputChannel *m_inputChannels;
         AudioParameters m_audioParameters;
         int m_inputChannelCount;
+        int m_auxChannelCount;
+        int m_totalChannelCount;
         int m_inputBufferSize;
         int m_inputSamplesRead;
         int m_latency;
@@ -137,6 +146,13 @@ class Synthesizer {
         void renderBlock(int n, const AudioParameters &parameters);
 
         uint32_t m_noiseState;
+
+        // Forced induction sounds
+        void renderForcedInduction(int n, const AudioParameters &parameters);
+        double m_whinePhase;
+        float m_mixEnvelope;
+        float m_hissLow;
+        float m_hissHigh;
 
         // Scratch buffers used while rendering a block of audio
         std::vector<float> m_channelInput;

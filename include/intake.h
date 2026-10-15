@@ -5,6 +5,8 @@
 
 #include "gas_system.h"
 
+class ForcedInduction;
+
 class Intake : public Part {
     public:
         struct Parameters {
@@ -64,6 +66,11 @@ class Intake : public Part {
         inline double getLambda() const { return m_lambda; }
         inline void setLambda(double lambda) { m_lambda = (lambda > 0) ? lambda : 1.0; }
 
+        // The throttle draws from the compressor's charge air instead of the
+        // atmosphere when the engine is boosted
+        void setForcedInduction(ForcedInduction *forcedInduction) { m_forcedInduction = forcedInduction; }
+        ForcedInduction *getForcedInduction() const { return m_forcedInduction; }
+
         // Temperature of the fresh charge after fuel evaporation [K]
         inline double getChargeTemperature() const { return m_chargeTemperature; }
 
@@ -90,6 +97,7 @@ class Intake : public Part {
         double m_chargeTemperature;
 
         GasSystem m_atmosphere;
+        ForcedInduction *m_forcedInduction;
 };
 
 #endif /* ATG_ENGINE_SIM_INTAKE_H */

@@ -126,6 +126,11 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
 
     addEngineParts();
 
+    // Superchargers load the crankshaft with their drive torque
+    if (m_engine->getForcedInduction() != nullptr) {
+        m_system->addForceGenerator(m_engine->getForcedInduction());
+    }
+
     m_dyno.connectCrankshaft(m_engine->getOutputCrankshaft());
     m_system->addConstraint(&m_dyno);
 
@@ -261,7 +266,8 @@ void PistonEngineSimulator::placeAndInitialize() {
 
     m_engine->getIgnitionModule()->reset();
 
-    m_exhaustFlowStagingBuffer = new double[m_engine->getExhaustSystemCount()];
+    // Exhaust channels followed by the forced induction control channels
+    m_exhaustFlowStagingBuffer = new double[m_engine->getExhaustSystemCount() + 3];
 }
 
 void PistonEngineSimulator::placeCylinder(int i) {
@@ -345,9 +351,14 @@ void PistonEngineSimulator::simulateStep_() {
     const int exhaustSystemCount = m_engine->getExhaustSystemCount();
     const int intakeCount = m_engine->getIntakeCount();
     const double fluidTimestep = timestep / m_fluidSimulationSteps;
+    ForcedInduction *forcedInduction = m_engine->getForcedInduction();
     for (int i = 0; i < m_fluidSimulationSteps; ++i) {
         for (int j = 0; j < exhaustSystemCount; ++j) {
             m_engine->getExhaustSystem(j)->process(fluidTimestep);
+        }
+
+        if (forcedInduction != nullptr) {
+            forcedInduction->process(fluidTimestep);
         }
 
         for (int j = 0; j < intakeCount; ++j) {
@@ -467,6 +478,23 @@ void PistonEngineSimulator::writeToSynthesizer() {
             head->getSoundAttenuation(piston->getCylinderIndex())
             * (exhaustSystem->getAudioVolume() * delayedExhaustPulse / cylinderCount)
             * (1 / (exhaustLength * exhaustLength));
+    }
+
+    // A turbine absorbs part of the exhaust pulses
+    ForcedInduction *forcedInduction = m_engine->getForcedInduction();
+    if (forcedInduction != nullptr && forcedInduction->isTurbocharger()) {
+        const double muffling = 1.0 - 0.35 * forcedInduction->getTurbineFlowFraction();
+        for (int i = 0; i < exhaustSystemCount; ++i) {
+            m_exhaustFlowStagingBuffer[i] *= muffling;
+        }
+    }
+
+    double *aux = m_exhaustFlowStagingBuffer + exhaustSystemCount;
+    aux[0] = aux[1] = aux[2] = 0;
+    if (forcedInduction != nullptr) {
+        aux[0] = forcedInduction->getWhineFrequency();
+        aux[1] = forcedInduction->getWhineLevel();
+        aux[2] = forcedInduction->getBlowoffLevel();
     }
 
     synthesizer().writeInput(m_exhaustFlowStagingBuffer);

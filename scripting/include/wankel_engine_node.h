@@ -193,6 +193,7 @@ namespace es_script {
             }
 
             m_ignitionModule->generate(engine, &context);
+            generateForcedInduction(engine);
 
             Function *meanPistonSpeedToTurbulence = engine->addOwnedObject(new Function);
             meanPistonSpeedToTurbulence->initialize(30, 1);

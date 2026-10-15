@@ -233,6 +233,19 @@ public node connect_wire {
     _connect_wire(wire: wire, angle: angle, ignition_module: this)
 }
 
+private node _add_forced_induction => __engine_sim__add_forced_induction {
+    input forced_induction [forced_induction_channel];
+    input engine [engine];
+}
+
+public node add_forced_induction {
+    input forced_induction;
+    input this;
+    alias output __out: this;
+
+    _add_forced_induction(forced_induction: forced_induction, engine: this)
+}
+
 private node _add_ignition_module => __engine_sim__add_ignition_module {
     input ignition_module [ignition_module];
     input engine [engine];

@@ -80,6 +80,12 @@ class AppUi {
         void addAudioSample(float sample);
         void addFrameTiming(double timePerStep, double audioLatency, double inputBufferUsage);
 
+        // Time spent in each part of a frame [s]
+        struct FrameProfile {
+            double ui = 0, simulation = 0, scene = 0, present = 0, total = 0;
+        };
+        void addFrameProfile(const FrameProfile &profile);
+
         bool wantsKeyboard() const;
         void toggleConsole() { m_showConsole = !m_showConsole; }
         void cycleLayout();
@@ -97,6 +103,7 @@ class AppUi {
         void buildConsoleWindow();
         void buildSettingsWindow();
         void buildDesignerWindow();
+        void buildLibraryWindow();
         void buildTuningWindow();
         void buildHelpWindow();
         void buildAboutWindow();
@@ -119,6 +126,8 @@ class AppUi {
         void refreshScriptLists();
         bool openDesignFromScript(const std::string &path);
         void generateDesign(bool load);
+        void loadDesign(const EngineDesign &design);
+        void refreshSavedDesigns();
 
         // Unit conversions following the preferences or the theme
         std::string powerUnits() const;
@@ -160,6 +169,7 @@ class AppUi {
         bool m_showConsole;
         bool m_showSettings;
         bool m_showDesigner;
+        bool m_showLibrary;
         bool m_showTuning;
         bool m_showHelp;
         bool m_showAbout;
@@ -224,6 +234,10 @@ class AppUi {
 
         // Performance
         double m_timePerStep;
+        FrameProfile m_profile;         // averaged
+        FrameProfile m_profilePeak;     // worst frame in the last second
+        FrameProfile m_profilePeakRunning;
+        double m_profilePeakTime = 0;
         double m_audioLatency;
         double m_inputBufferUsage;
 
@@ -243,6 +257,8 @@ class AppUi {
             int simulationFrequency = 10000;
             float volume = 1, convolution = 1, highFrequencyGain = 0.01f;
             float airNoise = 1, inputNoise = 0.5f;
+            double boostTarget = 0, driveRatio = 1, intercoolerEffectiveness = 0;
+            bool blowoffValve = true;
         };
         TuningDefaults m_tuningDefaults;
 
@@ -251,6 +267,17 @@ class AppUi {
         std::string m_designStatus;
         bool m_designStatusError;
         std::string m_designPath;
+        char m_saveAsName[128];
+
+        // Engine library
+        struct SavedDesign {
+            std::string path;
+            EngineDesign design;
+            bool designed = false;      // has a design header
+        };
+        std::vector<SavedDesign> m_savedDesigns;
+        bool m_savedDesignsValid;
+        std::string m_pendingDelete;
 };
 
 #endif /* ATG_ENGINE_SIM_APP_UI_H */

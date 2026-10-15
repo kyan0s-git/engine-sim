@@ -803,6 +803,26 @@ double GasSystem::flow(const FlowParameters &params) {
     return flow * direction;
 }
 
+void GasSystem::inject(double n, double T, const Mix &mix) {
+    if (n <= 0) return;
+
+    const double bulk_E_k_0 = bulkKineticEnergy();
+    if (isEngineering()) {
+        if (!m_environmentValid || !(m_environmentMix == mix)) {
+            mixProperties(mix, fuel(), &m_environmentEnergy, &m_environmentMolarMass);
+            m_environmentMix = mix;
+            m_environmentValid = true;
+        }
+
+        gainN(n, m_environmentEnergy.e(T) + constants::R * T, mix, m_environmentEnergy, m_environmentMolarMass);
+    }
+    else {
+        gainN(n, kineticEnergyPerMol(T, m_degreesOfFreedom), mix);
+    }
+
+    m_state.E_k += (bulkKineticEnergy() - bulk_E_k_0);
+}
+
 double GasSystem::flow(double k_flow, double dt, double P_env, double T_env, const Mix &mix) {
     const bool engineering = isEngineering();
     if (engineering) {

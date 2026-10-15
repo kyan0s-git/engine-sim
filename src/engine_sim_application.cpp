@@ -500,46 +500,10 @@ void EngineSimApplication::initialize() {
 #endif /* ATG_ENGINE_SIM_DISCORD_ENABLED */
 }
 
-void EngineSimApplication::process(float frame_dt) {
-    frame_dt = static_cast<float>(clamp(frame_dt, 1 / 200.0f, 1 / 30.0f));
+void EngineSimApplication::process(double elapsed) {
+    m_simulator->setSimulationSpeed(m_requestedSimulationSpeed);
 
-    double speed = m_ui.controls().simulationSpeed;
-    if (m_engine.IsKeyDown(ysKey::Code::N1)) {
-        speed = 1 / 10.0;
-    }
-    else if (m_engine.IsKeyDown(ysKey::Code::N2)) {
-        speed = 1 / 100.0;
-    }
-    else if (m_engine.IsKeyDown(ysKey::Code::N3)) {
-        speed = 1 / 200.0;
-    }
-    else if (m_engine.IsKeyDown(ysKey::Code::N4)) {
-        speed = 1 / 500.0;
-    }
-    else if (m_engine.IsKeyDown(ysKey::Code::N5)) {
-        speed = 1 / 1000.0;
-    }
-
-    if (m_engine.IsKeyDown(ysKey::Code::F1)) {
-        m_displayAngle += frame_dt * 1.0f;
-    }
-    else if (m_engine.IsKeyDown(ysKey::Code::F2)) {
-        m_displayAngle -= frame_dt * 1.0f;
-    }
-    else if (m_engine.ProcessKeyDown(ysKey::Code::F3)) {
-        m_displayAngle = 0.0f;
-    }
-
-    m_simulator->setSimulationSpeed(speed);
-
-    // Real time since the previous frame was simulated (the simulator
-    // limits how much it catches up after a stall)
-    const auto now = std::chrono::steady_clock::now();
-    double elapsed = 1 / 60.0;
-    if (m_lastProcessTime.time_since_epoch().count() != 0) {
-        elapsed = std::chrono::duration<double>(now - m_lastProcessTime).count();
-    }
-    m_lastProcessTime = now;
+    // The simulator limits how much it catches up after a stall
     m_simulator->startFrame(elapsed);
 
     auto proc_t0 = std::chrono::steady_clock::now();
@@ -558,9 +522,9 @@ void EngineSimApplication::process(float frame_dt) {
         : 0.0;
 
     // Keep enough audio queued in the output buffer to cover the longest
-    // recent frame; a fixed 100 ms ran dry whenever frames took longer
-    // (slow computers, heavy engines, window dragging)
-    m_frameTimePeak = std::max(std::min(elapsed, 0.2), m_frameTimePeak * 0.995);
+    // recent gap between slices; a fixed 100 ms ran dry whenever frames took
+    // longer (slow computers, heavy engines, window dragging)
+    m_frameTimePeak = std::max(std::min(elapsed, 0.2), m_frameTimePeak * std::exp(-elapsed / 3.0));
     const double outputLead = std::clamp(1.5 * m_frameTimePeak + 0.03, 0.1, 0.35);
 
     const SampleOffset safeWritePosition = m_audioSource->GetCurrentWritePosition();
@@ -660,14 +624,38 @@ float EngineSimApplication::unitsToPixels(float units) const {
 }
 
 void EngineSimApplication::run() {
+    using Clock = std::chrono::steady_clock;
+    auto seconds = [](Clock::time_point a, Clock::time_point b) {
+        return std::chrono::duration<double>(b - a).count();
+    };
+    const bool logProfile = (std::getenv("ENGINE_SIM_PROFILE") != nullptr);
+    Clock::time_point lastProfileLog = Clock::now();
+    Clock::time_point frameStart = Clock::now();
+    AppUi::FrameProfile profileSum, profileMax;
+    int profileFrames = 0;
+    double stepSum = 0;
+
+    startSimulationThread();
+
     while (true) {
         m_engine.StartFrame();
 
         if (!m_engine.IsOpen()) break;
 
+        AppUi::FrameProfile profile;
+
+        // Everything up to the engine view's geometry reads or changes the
+        // engine, so the simulation thread waits meanwhile
+        const Clock::time_point tw = Clock::now();
+        std::unique_lock<std::mutex> lock(m_simulationLock);
+        const Clock::time_point t0 = Clock::now();
+        profile.simulation = seconds(tw, t0);
+
         // The user interface is built first so that the engine view knows
         // the area left to it
         m_ui.build();
+        const Clock::time_point t1 = Clock::now();
+        profile.ui = seconds(t0, t1);
         AppUi::Controls &controls = m_ui.controls();
 
         if (controls.quitRequested || m_engine.ProcessKeyDown(ysKey::Code::Escape)) {
@@ -699,11 +687,6 @@ void EngineSimApplication::run() {
 
         if (m_engine.ProcessKeyDown(ysKey::Code::F5)) {
             m_ui.toggleConsole();
-        }
-
-        // Ctrl+, opens the settings (handled by the user interface)
-        if (m_engine.IsKeyDown(ysKey::Code::Control)) {
-            m_engine.ProcessKeyDown(ysKey::Code::OEM_Comma);
         }
 
         // While paused [Right] advances the simulation by one frame
@@ -781,20 +764,80 @@ void EngineSimApplication::run() {
 
         const bool step = m_engine.ProcessKeyDown(ysKey::Code::Right) || controls.stepRequested;
         controls.stepRequested = false;
-        if (!m_paused || step) {
-            process(m_engine.GetFrameLength());
+        if (m_paused && step) {
+            m_stepRequested = true;
         }
+
+        // Slow motion and view rotation
+        {
+            const float frameLength = m_engine.GetFrameLength();
+            double speed = controls.simulationSpeed;
+            if (m_engine.IsKeyDown(ysKey::Code::N1)) speed = 1 / 10.0;
+            else if (m_engine.IsKeyDown(ysKey::Code::N2)) speed = 1 / 100.0;
+            else if (m_engine.IsKeyDown(ysKey::Code::N3)) speed = 1 / 200.0;
+            else if (m_engine.IsKeyDown(ysKey::Code::N4)) speed = 1 / 500.0;
+            else if (m_engine.IsKeyDown(ysKey::Code::N5)) speed = 1 / 1000.0;
+            m_requestedSimulationSpeed = speed;
+
+            if (m_engine.IsKeyDown(ysKey::Code::F1)) {
+                m_displayAngle += frameLength * 1.0f;
+            }
+            else if (m_engine.IsKeyDown(ysKey::Code::F2)) {
+                m_displayAngle -= frameLength * 1.0f;
+            }
+            else if (m_engine.ProcessKeyDown(ysKey::Code::F3)) {
+                m_displayAngle = 0.0f;
+            }
+        }
+        const Clock::time_point t3 = Clock::now();
 
         m_uiManager.update(m_engine.GetFrameLength());
 
         renderScene();
+        const int frameSteps = (m_simulator != nullptr) ? m_simulator->getFrameIterationCount() : 0;
+        lock.unlock();
+        const Clock::time_point t4 = Clock::now();
+        profile.scene = seconds(t3, t4);
 
         m_engine.EndFrame();
+        const Clock::time_point t5 = Clock::now();
+        profile.present = seconds(t4, t5);
+        profile.total = seconds(frameStart, t5);
+        frameStart = t5;
+        m_ui.addFrameProfile(profile);
+
+        if (logProfile) {
+            // Averages and the worst frame of each second
+            profileSum.ui += profile.ui; profileSum.simulation += profile.simulation;
+            profileSum.scene += profile.scene; profileSum.present += profile.present;
+            profileSum.total += profile.total;
+            profileMax = (profile.total > profileMax.total) ? profile : profileMax;
+            ++profileFrames;
+            stepSum += frameSteps;
+
+            if (seconds(lastProfileLog, t5) > 1.0) {
+                const double n = profileFrames;
+                std::printf("%d frames: avg %.1f ms (ui %.1f, wait %.1f, scene %.1f, present %.1f, %.0f steps/slice); "
+                    "worst %.1f ms (ui %.1f, wait %.1f, scene %.1f, present %.1f)\n",
+                    profileFrames, 1E3 * profileSum.total / n, 1E3 * profileSum.ui / n,
+                    1E3 * profileSum.simulation / n, 1E3 * profileSum.scene / n,
+                    1E3 * profileSum.present / n, stepSum / n,
+                    1E3 * profileMax.total, 1E3 * profileMax.ui, 1E3 * profileMax.simulation,
+                    1E3 * profileMax.scene, 1E3 * profileMax.present);
+                std::fflush(stdout);
+                lastProfileLog = t5;
+                profileSum = profileMax = AppUi::FrameProfile();
+                profileFrames = 0;
+                stepSum = 0;
+            }
+        }
 
         if (isRecording()) {
             recordFrame();
         }
     }
+
+    stopSimulationThread();
 
     if (isRecording()) {
         stopRecording();
@@ -806,6 +849,55 @@ void EngineSimApplication::run() {
 
     saveSession();
     m_ui.savePreferences();
+}
+
+void EngineSimApplication::startSimulationThread() {
+    if (m_simulationRunning) return;
+
+    m_simulationRunning = true;
+    m_simulationThread = std::thread(&EngineSimApplication::simulationThread, this);
+}
+
+void EngineSimApplication::stopSimulationThread() {
+    if (!m_simulationRunning) return;
+
+    m_simulationRunning = false;
+    if (m_simulationThread.joinable()) m_simulationThread.join();
+}
+
+void EngineSimApplication::simulationThread() {
+    using Clock = std::chrono::steady_clock;
+
+    // Slices of about 4 ms keep the engine view smooth (the view shows the
+    // state at the end of the latest slice) and the audio queue topped up
+    constexpr double SlicePeriod = 0.004;
+    Clock::time_point last = Clock::now();
+
+    while (m_simulationRunning) {
+        const Clock::time_point start = Clock::now();
+        {
+            std::lock_guard<std::mutex> lock(m_simulationLock);
+            const Clock::time_point now = Clock::now();
+            const double elapsed = std::chrono::duration<double>(now - last).count();
+            last = now;
+
+            if (m_simulator != nullptr && m_iceEngine != nullptr) {
+                if (!m_paused) {
+                    process(elapsed);
+                }
+                else if (m_stepRequested) {
+                    m_stepRequested = false;
+                    process(1 / 60.0);
+                }
+            }
+        }
+
+        // Leave the lock to the main thread for a moment even when the
+        // simulation can't keep up
+        const double work = std::chrono::duration<double>(Clock::now() - start).count();
+        const double rest = std::max(SlicePeriod - work, 0.0005);
+        std::this_thread::sleep_for(std::chrono::duration<double>(rest));
+    }
 }
 
 void EngineSimApplication::setPaused(bool paused) {

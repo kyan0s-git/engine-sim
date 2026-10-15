@@ -9,6 +9,7 @@
 #include "cylinder_bank.h"
 #include "cylinder_head.h"
 #include "exhaust_system.h"
+#include "forced_induction.h"
 #include "ignition_module.h"
 #include "intake.h"
 #include "combustion_chamber.h"
@@ -125,6 +126,11 @@ class Engine : public Part {
         CombustionChamber *getChamber(int i) const { return m_combustionChambers[i]; }
         Fuel *getFuel() { return &m_fuel; }
 
+        // Turbocharger or supercharger (owned by the engine); connects it to
+        // every intake and exhaust system
+        void setForcedInduction(ForcedInduction *forcedInduction);
+        ForcedInduction *getForcedInduction() const { return m_forcedInduction; }
+
         double getSimulationFrequency() const { return m_initialSimulationFrequency; }
         double getInitialHighFrequencyGain() const { return m_initialHighFrequencyGain; }
         double getInitialNoise() const { return m_initialNoise; }
@@ -237,6 +243,7 @@ class Engine : public Part {
         Fuel m_fuel;
 
         Throttle *m_throttle;
+        ForcedInduction *m_forcedInduction;
 
         double m_throttleValue;
         double m_displacement;

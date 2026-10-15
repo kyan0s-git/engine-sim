@@ -20,8 +20,11 @@
 #include "delta.h"
 #include "dtv.h"
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 class EngineSimApplication {
@@ -170,7 +173,12 @@ class EngineSimApplication {
 
     protected:
         virtual void initialize();
-        virtual void process(float dt);
+        // Simulates the time since the previous call and moves the audio to
+        // the output device (runs on the simulation thread)
+        virtual void process(double elapsed);
+        void simulationThread();
+        void startSimulationThread();
+        void stopSimulationThread();
         virtual void render();
 
         float m_displayAngle;
@@ -227,8 +235,17 @@ class EngineSimApplication {
         EngineView *m_engineView;
         AppUi m_ui;
         bool m_restartRequested = false;
-        std::chrono::steady_clock::time_point m_lastProcessTime;
         double m_frameTimePeak = 1 / 60.0;
+
+        // The simulation runs on its own thread in short slices so that the
+        // frame rate doesn't depend on the cost of the physics. The main
+        // thread holds the lock while it reads or changes the engine (user
+        // interface, input, engine view geometry, loading scripts).
+        std::mutex m_simulationLock;
+        std::thread m_simulationThread;
+        std::atomic<bool> m_simulationRunning{ false };
+        bool m_stepRequested = false;
+        double m_requestedSimulationSpeed = 1.0;
         float m_appliedVolume = -1.0f;
         SimulationObject::ViewParameters m_viewParameters;
 
