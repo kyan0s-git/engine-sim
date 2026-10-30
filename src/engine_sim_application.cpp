@@ -1786,17 +1786,35 @@ void EngineSimApplication::processEngineInput() {
     }
 
     if (m_simulator->m_dyno.m_enabled) {
+        // A gear change restarts the sweep from the current speed
+        const int gear = (m_simulator->getTransmission() != nullptr) ? m_simulator->getTransmission()->getGear() : -1;
+        if (gear != m_dynoLastGear) {
+            m_dynoLastGear = gear;
+            m_dynoSpeed = std::abs(m_iceEngine->getSpeed());
+            m_dynoSweepDone = false;
+        }
+
         if (!m_simulator->m_dyno.m_hold) {
-            if (m_simulator->getFilteredDynoTorque() > units::torque(1.0, units::ft_lb)) {
-                m_dynoSpeed += units::rpm(500) * dt;
+            if (m_dynoSweepDone) {
+                // The sweep reached the redline: the dyno stays on and holds
+                // the start speed; releasing the throttle re-arms it. (It used
+                // to switch itself off, which in gear happened within seconds.)
+                m_dynoSpeed = m_iceEngine->getDynoMinSpeed();
+                if (m_speedSetting < 0.05) m_dynoSweepDone = false;
             }
             else {
-                m_dynoSpeed *= (1 / (1 + dt));
-            }
+                if (m_simulator->getFilteredDynoTorque() > units::torque(1.0, units::ft_lb)) {
+                    m_dynoSpeed += units::rpm(500) * dt;
+                }
+                else {
+                    m_dynoSpeed *= (1 / (1 + dt));
+                }
 
-            if (m_dynoSpeed > m_iceEngine->getRedline()) {
-                m_simulator->m_dyno.m_enabled = false;
-                m_dynoSpeed = units::rpm(0);
+                if (m_dynoSpeed > m_iceEngine->getRedline()) {
+                    m_dynoSweepDone = true;
+                    m_dynoSpeed = m_iceEngine->getDynoMinSpeed();
+                    m_ui.log("Dyno sweep complete; release the throttle to start another");
+                }
             }
         }
     }
@@ -1834,14 +1852,16 @@ void EngineSimApplication::processEngineInput() {
         m_ui.log(msg);
     }
 
+    // Gear changes go through the ECU so that the automatic gearbox can
+    // time them (it changes gear directly in manual mode)
     if (m_engine.ProcessKeyDown(ysKey::Code::Up)) {
-        m_simulator->getTransmission()->changeGear(m_simulator->getTransmission()->getGear() + 1);
+        m_simulator->getEcu().requestShift(1);
 
         m_ui.log(
             "Gear " + std::to_string(m_simulator->getTransmission()->getGear() + 1));
     }
     else if (m_engine.ProcessKeyDown(ysKey::Code::Down)) {
-        m_simulator->getTransmission()->changeGear(m_simulator->getTransmission()->getGear() - 1);
+        m_simulator->getEcu().requestShift(-1);
 
         if (m_simulator->getTransmission()->getGear() != -1) {
             m_ui.log(
@@ -1880,7 +1900,12 @@ void EngineSimApplication::processEngineInput() {
 
     const double clutch_s = dt / (dt + clutchRC);
     m_clutchPressure = m_clutchPressure * (1 - clutch_s) + m_targetClutchPressure * clutch_s;
-    m_simulator->getTransmission()->setClutchPressure(m_clutchPressure);
+
+    // The automatic gearbox works the clutch itself
+    const Ecu &ecu = m_simulator->getEcu();
+    if (!(ecu.settings().enabled && ecu.settings().automatic)) {
+        m_simulator->getTransmission()->setClutchPressure(m_clutchPressure);
+    }
 }
 
 void EngineSimApplication::renderScene() {

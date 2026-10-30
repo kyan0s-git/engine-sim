@@ -45,6 +45,9 @@ class Transmission {
         inline void setClutchPressure(double pressure) { m_clutchPressure = pressure; }
         inline double getClutchPressure() const { return m_clutchPressure; }
 
+        // True while the tires, not the clutch, limit the torque (wheelspin)
+        inline bool isTractionLimited() const { return m_tractionLimited; }
+
     protected:
         atg_scs::ClutchConstraint m_clutchConstraint;
         DrivetrainSpring m_clutchSpring;
@@ -60,6 +63,7 @@ class Transmission {
         double *m_gearRatios;
         double m_maxClutchTorque;
         double m_clutchPressure;
+        bool m_tractionLimited = false;
 };
 
 #endif /* ATG_ENGINE_SIM_TRANSMISSION_H */

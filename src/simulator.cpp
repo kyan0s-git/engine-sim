@@ -142,6 +142,7 @@ bool Simulator::simulateStep() {
     const double timestep = getTimestep();
     m_system->process(timestep, 1);
 
+    m_ecu.update(timestep);
     m_engine->update(timestep);
     m_vehicle->update(timestep);
     m_transmission->update(timestep);

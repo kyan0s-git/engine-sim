@@ -53,7 +53,7 @@ void IgnitionModule::reset() {
 void IgnitionModule::update(double dt) {
     const double cycleAngle = m_crankshaft->getCycleAngle();
 
-    if (m_enabled && m_revLimitTimer == 0) {
+    if (m_enabled && m_revLimitTimer == 0 && !m_cut) {
         const double cycleLength = m_crankshaft->getCycleLength();
         const double advance = getTimingAdvance();
 
@@ -108,7 +108,14 @@ void IgnitionModule::resetIgnitionEvents() {
 }
 
 double IgnitionModule::getTimingAdvance() {
-    return m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta) + m_timingOffset;
+    const double base = m_ecuControl
+        ? m_ecuAdvance
+        : m_timingCurve->sampleTriangle(-m_crankshaft->m_body.v_theta);
+    return base + m_timingOffset;
+}
+
+double IgnitionModule::sampleCurve(double speed) const {
+    return m_timingCurve->sampleTriangle(speed);
 }
 
 IgnitionModule::SparkPlug *IgnitionModule::getPlug(int i) {

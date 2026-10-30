@@ -240,6 +240,8 @@ class EngineSimApplication {
         Transmission *m_transmission;
         Simulator *m_simulator;
         double m_dynoSpeed;
+        int m_dynoLastGear = -1;
+        bool m_dynoSweepDone = false;
         double m_torque;
 
         UiManager m_uiManager;

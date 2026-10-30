@@ -156,9 +156,9 @@ jobs:
             cp -R "dist/$STAGE" "$T/pkg"
             EXE="$T/pkg/bin/engine-sim-app"
           fi
-          LATEST=$(curl -sS -H "Authorization: Bearer ${{ github.token }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
-            | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+          RELEASE_JSON=$(curl -sS -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          LATEST=$(echo "$RELEASE_JSON" | grep '"tag_name"' | head -n1 | sed -E 's/.*"v?([^"]+)".*/\1/' || true)
           echo "Latest release: $LATEST"
           if [[ -z "$LATEST" ]]; then echo "No published release to update to"; exit 0; fi
           OUT=""

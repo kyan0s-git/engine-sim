@@ -141,6 +141,8 @@ void PistonEngineSimulator::loadSimulation(Engine *engine, Vehicle *vehicle, Tra
 
     placeAndInitialize();
     initializeSynthesizer();
+
+    getEcu().initialize(m_engine, m_transmission, m_vehicle);
 }
 
 void PistonEngineSimulator::addEngineParts() {

@@ -81,6 +81,10 @@ class Engine : public Part {
 
         virtual Crankshaft *getOutputCrankshaft() const;
         virtual void setSpeedControl(double s);
+
+        // Limits applied to the speed control by the ECU (idle air, anti-lag,
+        // throttle cut while shifting)
+        void setSpeedControlLimits(double floor, double ceiling) { m_speedControlFloor = floor; m_speedControlCeiling = ceiling; }
         virtual double getSpeedControl();
         virtual void setThrottle(double throttle);
         virtual double getThrottle() const;
@@ -243,6 +247,8 @@ class Engine : public Part {
         Fuel m_fuel;
 
         Throttle *m_throttle;
+        double m_speedControlFloor = 0.0;
+        double m_speedControlCeiling = 1.0;
         ForcedInduction *m_forcedInduction;
 
         double m_throttleValue;

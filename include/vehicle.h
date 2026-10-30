@@ -24,6 +24,13 @@ class Vehicle {
             bool simulateFlex = false;
 
             double maxBrakeForce = units::force(5000.0, units::N);
+
+            // Tire grip: the driven wheels can push the car with at most
+            // friction * weight on them (0 = unlimited). Rear-wheel drive
+            // cars carry about 60% of their weight on the driven wheels when
+            // accelerating, front-wheel drive about 55%, all-wheel drive 100%.
+            double tireFriction = 1.1;
+            double drivenWeightFraction = 0.6;
         };
 
     public:
@@ -59,6 +66,12 @@ class Vehicle {
         inline void resetTravelledDistance() { m_travelledDistance = 0; }
         double linearForceToVirtualTorque(double force) const;
 
+        // Largest force the driven tires can put on the road [N] (0 = no limit)
+        double getTractionLimit() const;
+        inline double getTireFriction() const { return m_tireFriction; }
+        inline double getDrivenWeightFraction() const { return m_drivenWeightFraction; }
+        inline void setTireFriction(double friction) { m_tireFriction = friction; }
+
     protected:
         atg_scs::RigidBody *m_rotatingMass;
 
@@ -71,6 +84,8 @@ class Vehicle {
         double m_rollingResistance;
 
         double m_maxBrakeForce;
+        double m_tireFriction = 0;
+        double m_drivenWeightFraction = 0.6;
         double m_brakeLevel;
 
         bool m_simulateFlex;

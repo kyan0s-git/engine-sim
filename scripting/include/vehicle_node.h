@@ -31,6 +31,8 @@ namespace es_script {
             addInput("limit_flex", &m_parameters.limitFlex);
             addInput("simulate_flex", &m_parameters.simulateFlex);
             addInput("max_brake_force", &m_parameters.maxBrakeForce);
+            addInput("tire_friction", &m_parameters.tireFriction);
+            addInput("driven_weight_fraction", &m_parameters.drivenWeightFraction);
 
             // Accepted for compatibility with scripts written for newer
             // versions of Engine Simulator; not used by this simulation

@@ -21,6 +21,9 @@ Vehicle::~Vehicle() {
 }
 
 void Vehicle::initialize(const Parameters &params) {
+    m_tireFriction = params.tireFriction;
+    m_drivenWeightFraction = params.drivenWeightFraction;
+
     m_mass = params.mass;
     m_dragCoefficient = params.dragCoefficient;
     m_crossSectionArea = params.crossSectionArea;
@@ -76,4 +79,9 @@ double Vehicle::linearForceToVirtualTorque(double force) const {
     const double rotationToKineticRatio =
         std::sqrt(m_rotatingMass->I / m_mass);
     return rotationToKineticRatio * force;
+}
+
+double Vehicle::getTractionLimit() const {
+    if (m_tireFriction <= 0) return 0;
+    return m_tireFriction * m_drivenWeightFraction * m_mass * 9.81;
 }

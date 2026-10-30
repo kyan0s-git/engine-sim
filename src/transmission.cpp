@@ -42,9 +42,21 @@ void Transmission::initialize(const Parameters &params) {
 }
 
 void Transmission::update(double dt) {
-    const double maxTorque = (m_gear == -1)
+    double maxTorque = (m_gear == -1)
         ? 0.0
         : m_maxClutchTorque * m_clutchPressure;
+
+    // The tires slip before the clutch does when the engine can deliver
+    // more than they can put down (seen at the clutch through the gearing)
+    m_tractionLimited = false;
+    if (m_gear >= 0 && m_vehicle != nullptr && m_vehicle->getTractionLimit() > 0) {
+        const double tractionTorque = m_vehicle->getTractionLimit() * m_vehicle->getTireRadius()
+            / (m_gearRatios[m_gear] * m_vehicle->getDiffRatio());
+        if (tractionTorque < maxTorque) {
+            maxTorque = tractionTorque;
+            m_tractionLimited = true;
+        }
+    }
 
     m_clutchConstraint.m_minTorque = -maxTorque;
     m_clutchConstraint.m_maxTorque = maxTorque;

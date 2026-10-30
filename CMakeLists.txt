@@ -83,6 +83,7 @@ add_library(engine-sim STATIC
     src/engine.cpp
     src/engine_design.cpp
     src/engine_presets.cpp
+    src/ecu.cpp
     src/engine_friction.cpp
     src/engine_metrics.cpp
     src/exhaust_system.cpp
@@ -143,6 +144,7 @@ add_library(engine-sim STATIC
     include/engine_metrics.h
     include/exhaust_system.h
     include/forced_induction.h
+    include/ecu.h
     include/feedback_comb_filter.h
     include/filter.h
     include/fuel.h
@@ -254,6 +256,9 @@ if (PIRANHA_ENABLED)
 
     add_executable(engine-sim-dyno tools/dyno.cpp)
     target_link_libraries(engine-sim-dyno PRIVATE engine-sim-script-interpreter)
+
+    add_executable(engine-sim-drive tools/drive.cpp)
+    target_link_libraries(engine-sim-drive PRIVATE engine-sim-script-interpreter)
 endif()
 
 # ========================================================
@@ -460,6 +465,7 @@ if (ENGINE_SIM_BUILD_TESTS)
         test/gas_system_tests.cpp
         test/engine_design_tests.cpp
         test/forced_induction_tests.cpp
+        test/ecu_tests.cpp
         test/engine_model_tests.cpp
         test/function_test.cpp
         test/synthesizer_tests.cpp

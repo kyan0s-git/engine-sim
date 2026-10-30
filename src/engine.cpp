@@ -446,7 +446,16 @@ double Engine::getIntakeFlowRate() const {
 }
 
 void Engine::update(double dt) {
-    m_throttle->update(dt, this);
+    const double requested = m_throttle->getSpeedControl();
+    const double limited = std::clamp(requested, m_speedControlFloor, std::max(m_speedControlCeiling, m_speedControlFloor));
+    if (limited != requested) {
+        m_throttle->setSpeedControl(limited);
+        m_throttle->update(dt, this);
+        m_throttle->setSpeedControl(requested);
+    }
+    else {
+        m_throttle->update(dt, this);
+    }
 }
 
 double Engine::getManifoldPressure() const {

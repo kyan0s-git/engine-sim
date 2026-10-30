@@ -1032,6 +1032,13 @@ public node vehicle => __engine_sim__vehicle {
     // Braking force at full brake pedal (press [.] to brake)
     input max_brake_force [float]: 5000 * units.N;
 
+    // Tire grip: the driven tires push with at most friction * the weight on
+    // them (0 disables the limit). Weight on the driven wheels while
+    // accelerating: about 0.6 (rear-wheel drive), 0.55 (front-wheel drive),
+    // 1.0 (all-wheel drive).
+    input tire_friction [float]: 1.1;
+    input driven_weight_fraction [float]: 0.6;
+
     // Accepted for compatibility with scripts written for newer versions of
     // Engine Simulator; these are not used by this simulation
     input coeff_static_friction [float]: 0.7;

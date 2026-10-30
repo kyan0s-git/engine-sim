@@ -10,6 +10,7 @@
 #include "derivative_filter.h"
 #include "vehicle_drag_constraint.h"
 #include "delay_filter.h"
+#include "ecu.h"
 #include "engine.h"
 
 #include <algorithm>
@@ -87,6 +88,9 @@ public:
     double filteredEngineSpeed() const { return m_filteredEngineSpeed; }
 
     Dynamometer m_dyno;
+
+    Ecu &getEcu() { return m_ecu; }
+    const Ecu &getEcu() const { return m_ecu; }
     StarterMotor m_starterMotor;
 
 protected:
@@ -130,6 +134,7 @@ private:
 
     double m_filteredEngineSpeed;
     double m_stepRemainder = 0;
+    Ecu m_ecu;
 
     int m_steps;
 };

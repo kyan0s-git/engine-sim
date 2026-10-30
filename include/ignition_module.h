@@ -44,6 +44,19 @@ class IgnitionModule : public Part {
 
         double getTimingAdvance();
 
+        // The script's timing curve at an engine speed [rad/s]
+        double sampleCurve(double speed) const;
+
+        // ECU control: the ECU's advance replaces the timing curve, and a cut
+        // suppresses every spark (shift cut, overboost protection)
+        void setEcuControl(bool enabled) { m_ecuControl = enabled; }
+        void setEcuAdvance(double advance) { m_ecuAdvance = advance; }
+        void setCut(bool cut) { m_cut = cut; }
+        bool isCut() const { return m_cut; }
+
+        void setLimiterDuration(double duration) { m_limiterDuration = duration; }
+        double getLimiterDuration() const { return m_limiterDuration; }
+
         // Added to the timing curve (positive = more advance) [rad]
         void setTimingOffset(double offset) { m_timingOffset = offset; }
         double getTimingOffset() const { return m_timingOffset; }
@@ -69,6 +82,9 @@ class IgnitionModule : public Part {
         double m_revLimitTimer;
         double m_limiterDuration;
         double m_timingOffset = 0.0;
+        bool m_ecuControl = false;
+        double m_ecuAdvance = 0.0;
+        bool m_cut = false;
 };
 
 #endif /* ATG_ENGINE_SIM_IGNITION_MODULE_H */
