@@ -39,7 +39,7 @@ class Synthesizer {
             int inputChannelCount = 1;
 
             // Control channels written after the exhaust channels:
-            // whine frequency [Hz], whine level [0, 1], blow-off level [0, 1]
+            // see Synthesizer::renderForcedInduction()
             int auxChannelCount = 0;
             int inputBufferSize = 1024;
             int audioBufferSize = 44100;
@@ -149,10 +149,21 @@ class Synthesizer {
 
         // Forced induction sounds
         void renderForcedInduction(int n, const AudioParameters &parameters);
+        struct Bandpass {
+            float b0 = 0, b2 = 0, a1 = 0, a2 = 0;
+            float x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+            void set(float f, float q, float fs);
+            float process(float x);
+        };
+
         double m_whinePhase;
+        double m_vibratoPhase;
+        double m_flutterPhase;
+        unsigned int m_fiCounter;
         float m_mixEnvelope;
-        float m_hissLow;
-        float m_hissHigh;
+        Bandpass m_whistleBand, m_whooshBand, m_flutterBand;
+        Bandpass m_blowoffBand1, m_blowoffBand2, m_wastegateBand;
+        const float *m_auxPointers[7] = {};
 
         // Scratch buffers used while rendering a block of audio
         std::vector<float> m_channelInput;

@@ -60,6 +60,7 @@ namespace {
             d.lambda = 0.95;
             d.exhaustSound = "mild_exhaust_0";
             d.vehicleMass = 1450;
+            d.drivetrain = "fwd";
             presets.push_back(d);
         }
 
@@ -125,6 +126,8 @@ namespace {
             d.induction = EngineDesign::Induction::Turbo;
             d.boost = 16 * psi;
             d.turbineAr = 0.55;
+            d.twinScroll = true;
+            d.blowoffType = "recirculating";
             d.intercoolerEffectiveness = 0.8;
             d.runnerLength = 0.25; d.primaryLength = 0.3;
             d.exhaustLength = 3.0; d.exhaustDiameter = 70 * mm;
@@ -162,6 +165,8 @@ namespace {
             d.lambda = 1.0;
             d.exhaustSound = "minimal_muffling_03";
             d.vehicleMass = 800;
+            d.externalWastegate = true;
+            d.tireFriction = 1.6;
             presets.push_back(d);
         }
 
@@ -186,6 +191,7 @@ namespace {
             d.lambda = 0.95;
             d.exhaustSound = "real_engine_0";
             d.vehicleMass = 1600;
+            d.idleThrottle = 0.995;
             presets.push_back(d);
         }
 
@@ -210,6 +216,7 @@ namespace {
             d.lambda = 0.9;
             d.exhaustSound = "minimal_muffling_01";
             d.vehicleMass = 1650;
+            d.idleThrottle = 0.995;
             presets.push_back(d);
         }
 
@@ -235,6 +242,7 @@ namespace {
             d.engineering = false;
             d.exhaustSound = "minimal_muffling_02";
             d.vehicleMass = 1280;
+            d.idleThrottle = 0.9965;
             presets.push_back(d);
         }
 
@@ -256,6 +264,8 @@ namespace {
             d.lambda = 0.9;
             d.exhaustSound = "sharp_0";
             d.vehicleMass = 1360;
+            d.idleThrottle = 0.995;
+            d.tireFriction = 1.3;
             presets.push_back(d);
         }
 
@@ -278,6 +288,8 @@ namespace {
             d.flywheelMass = 10;
             d.lambda = 0.95;
             d.vehicleMass = 2300;
+            d.idleThrottle = 0.995;
+            d.drivetrain = "awd";
             presets.push_back(d);
         }
 

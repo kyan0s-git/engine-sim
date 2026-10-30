@@ -107,7 +107,7 @@ class Ecu {
         // Builds the stock maps from the engine (its timing curve, mixture,
         // boost and rev limit)
         void initialize(Engine *engine, Transmission *transmission, Vehicle *vehicle);
-        void reset() { m_settings = m_stock; m_shiftTimer = 0; m_idleAir = 0; }
+        void reset() { m_settings = m_stock; m_shiftTimer = 0; m_idleAir = 0; m_boostFiltered = 0; }
 
         void update(double dt);
 
@@ -133,7 +133,7 @@ class Ecu {
 
     protected:
         void updateGearbox(double dt, double rpm, double throttle, double vehicleSpeed);
-        double clutchForLaunch(double rpm) const;
+        double launchClutch(double dt, double rpm, double throttle);
 
         Engine *m_engine;
         Transmission *m_transmission;
@@ -149,7 +149,10 @@ class Ecu {
         int m_shiftTarget;
         double m_manualHold;            // automatic shifting paused after a manual shift [s]
         double m_timeInGear;
+        bool m_idleArmed = false;
         double m_overboostTimer;
+        double m_boostFiltered = 0;     // [kPa]
+        double m_launchClutch = 0;
 };
 
 #endif /* ATG_ENGINE_SIM_ECU_H */

@@ -96,6 +96,8 @@ Ecu::Ecu() {
     m_shiftTarget = -1;
     m_manualHold = 0;
     m_overboostTimer = 0;
+    m_boostFiltered = 0;
+    m_launchClutch = 0;
     m_timeInGear = 0;
 }
 
@@ -108,6 +110,8 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     m_shiftTimer = 0;
     m_manualHold = 0;
     m_overboostTimer = 0;
+    m_boostFiltered = 0;
+    m_launchClutch = 0;
 
     Settings s;
     IgnitionModule *ignition = engine->getIgnitionModule();
@@ -152,7 +156,7 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     s.revLimit = revLimit;
     s.cutTime = ignition->getLimiterDuration();
     s.launchRpm = std::round(0.55 * redline / 100.0) * 100.0;
-    s.useBoostMap = (fi != nullptr);
+    s.useBoostMap = (fi != nullptr && fi->isTurbocharger());
     s.antiLagMinRpm = std::round(0.35 * redline / 100.0) * 100.0;
     s.idleRpm = 0;      // set below
 
@@ -171,18 +175,26 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     }
     s.wotUpshift.assign((transmission != nullptr) ? transmission->getGearCount() : 0, 0.0);
 
-    // Idle control is off in the stock tune (the script's idle air setting
-    // decides the idle speed)
-    s.idleControl = false;
-    s.idleRpm = std::clamp(std::round(0.12 * redline / 50.0) * 50.0, 650.0, 1500.0);
-    s.launchClutchRpm = std::clamp(0.2 * redline, 1000.0, 2500.0);
+    // Idle control only ever adds air, so engines whose own idle setting
+    // keeps them above the target are unaffected
+    s.idleControl = true;
+    s.idleRpm = std::clamp(std::round(0.11 * redline / 50.0) * 50.0, 700.0, 2500.0);
+    s.launchClutchRpm = std::clamp(0.2 * redline, 1000.0, 4000.0);
 
     m_settings = s;
     m_stock = s;
 }
 
-double Ecu::clutchForLaunch(double rpm) const {
-    return smoothstep(m_settings.idleRpm + 150, m_settings.idleRpm + m_settings.launchClutchRpm, rpm);
+double Ecu::launchClutch(double dt, double rpm, double throttle) {
+    // Slips the clutch to hold the engine near a launch speed, like a torque
+    // converter's stall speed (higher with more throttle): the engine stays
+    // where it makes torque, whatever its size or the clutch's capacity
+    const double target = m_settings.idleRpm + m_settings.launchClutchRpm * (0.3 + 0.7 * std::clamp(throttle, 0.0, 1.0));
+    // It lets go faster than it bites, so that slowing to a stop doesn't
+    // stall the engine
+    const double gain = (rpm < target) ? 6.0 : 3.0;
+    m_launchClutch = std::clamp(m_launchClutch + gain * (rpm - target) / target * dt, 0.0, 1.0);
+    return m_launchClutch;
 }
 
 void Ecu::requestShift(int direction) {
@@ -246,7 +258,8 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
 
     // Pressing the throttle in neutral selects first gear
     if (gear < 0) {
-        if (throttle > 0.02 && vehicleSpeed < 3.0) {
+        const bool running = m_engine->getIgnitionModule()->m_enabled && rpm > 0.8 * m_settings.idleRpm;
+        if (running && throttle > 0.05 && vehicleSpeed < 3.0) {
             t->changeGear(0);
             gear = 0;
         }
@@ -261,10 +274,19 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
         vehicleSpeed / std::max(m_vehicle->getTireRadius(), 0.05)
         * m_vehicle->getDiffRatio() * t->getGearRatio(gear));
 
+    // Held on the brakes at a standstill (staging a launch): clutch out
+    if (m_vehicle->getBrakeLevel() > 0 && vehicleSpeed < 1.0) {
+        m_launchClutch = 0;
+        t->setClutchPressure(0.0);
+        return;
+    }
+
     // Clutch: slips to launch the car, locked once the wheels keep the
-    // engine above idle
+    // engine above idle.
     const double lockRpm = m_settings.idleRpm + 0.6 * m_settings.launchClutchRpm;
-    const double clutch = (wheelRpm > lockRpm) ? 1.0 : std::max(clutchForLaunch(rpm), smoothstep(m_settings.idleRpm, lockRpm, wheelRpm));
+    double clutch = 1.0;
+    if (wheelRpm > lockRpm) m_launchClutch = 1.0;
+    else clutch = launchClutch(dt, rpm, throttle);
     t->setClutchPressure(clutch);
 
     if (m_manualHold > 0) return;
@@ -287,11 +309,14 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
         m_state.lastShift = std::string(what) + " at " + std::to_string(static_cast<int>(rpm)) + " rpm";
     };
 
-    // Upshifts follow the engine speed (wheelspin included, like a real
-    // gearbox hitting the limiter); downshifts follow the road speed so that
-    // the engine speed sagging during a shift or recovering from wheelspin
-    // doesn't trigger one
-    if (gear < gearCount - 1 && rpm > upshiftRpm(gear) && clutch > 0.95 && m_timeInGear > 0.3) {
+    // Upshifts need the engine at the shift point and the road speed close
+    // to it as well (a gearbox reads its output shaft): shifting on the
+    // engine speed alone during wheelspin lands in a gear too tall to pull.
+    // Downshifts follow the road speed so that the engine speed sagging
+    // during a shift or recovering from wheelspin doesn't trigger one
+    if (gear < gearCount - 1 && rpm > upshiftRpm(gear) && wheelRpm > 0.85 * upshiftRpm(gear)
+        && clutch > 0.95 && m_timeInGear > 0.3)
+    {
         startShift(gear + 1, "up");
         return;
     }
@@ -390,23 +415,44 @@ void Ecu::update(double dt) {
             m_state.boostTarget = fi->getBoostTarget() / 1000.0;
         }
 
+        // The manifold pressure pulses with every intake event (strongly on
+        // engines with few cylinders or rotors), so the protection reads it
+        // through a filter like a real pressure sensor and ignores the
+        // spike when the throttle stays open through a shift
+        const double filter = dt / (dt + 0.1);
+        m_boostFiltered += (fi->getBoost() / 1000.0 - m_boostFiltered) * filter;
+
         m_overboostTimer = std::max(m_overboostTimer - dt, 0.0);
-        if (s.overboostCut && fi->getBoost() / 1000.0 > m_state.boostTarget + s.overboostMargin) {
+        // Only a turbocharger has a boost target (a supercharger's boost is
+        // set by its drive ratio)
+        if (s.overboostCut && fi->isTurbocharger() && m_state.boostTarget > 0 && !m_state.shifting
+            && m_boostFiltered > m_state.boostTarget + s.overboostMargin)
+        {
             m_overboostTimer = 0.25;
         }
         m_state.overboost = (m_overboostTimer > 0);
     }
 
-    // Idle speed control: extra air when the engine sags below the target
-    // with the throttle closed
-    if (s.idleControl && ignition->m_enabled && rpm > 150 && throttle < 0.03) {
-        m_idleAir += 4e-5 * (s.idleRpm - rpm) * dt;
-        m_idleAir = std::clamp(m_idleAir, 0.0, 0.08);
+    // Idle speed control: proportional-integral on the engine speed error,
+    // adding air through the idle bypass with the throttle closed (it only
+    // adds air, so engines that idle above the target are unaffected)
+    // It arms once the engine has run above the target, so it doesn't add
+    // air while cranking (a bigger start flare empties the manifold)
+    double idleAir = 0;
+    if (!ignition->m_enabled || rpm < 150) m_idleArmed = false;
+    else if (rpm > 1.2 * s.idleRpm) m_idleArmed = true;
+
+    if (s.idleControl && m_idleArmed) {
+        const double error = s.idleRpm - rpm;
+        if (throttle < 0.03) {
+            m_idleAir = std::clamp(m_idleAir + 1.5e-5 * error * dt, 0.0, 0.12);
+        }
+        idleAir = std::clamp(m_idleAir + 5e-5 * std::max(error, 0.0), 0.0, 0.15);
     }
-    else if (!ignition->m_enabled || rpm < 150) {
+    else if (!ignition->m_enabled) {
         m_idleAir = std::max(m_idleAir - dt * 0.05, 0.0);
     }
-    m_state.idleAir = s.idleControl ? m_idleAir : 0.0;
+    m_state.idleAir = s.idleControl ? idleAir : 0.0;
 
     double floor = m_state.idleAir;
     if (m_state.antiLagActive) floor = std::max(floor, s.antiLagAir);

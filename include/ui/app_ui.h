@@ -1,6 +1,7 @@
 #ifndef ATG_ENGINE_SIM_APP_UI_H
 #define ATG_ENGINE_SIM_APP_UI_H
 
+#include "../ecu.h"
 #include "../engine_design.h"
 #include "../engine_metrics.h"
 #include "../user_preferences.h"
@@ -78,6 +79,7 @@ class AppUi {
 
         // Data collection
         void sampleSimulationStep();
+        void updateLaunchTest(double dt);    // simulation thread, every step
         void addAudioSample(float sample);
         void addFrameTiming(double timePerStep, double audioLatency, double inputBufferUsage);
 
@@ -111,6 +113,22 @@ class AppUi {
         void buildEngineViewOverlay();
 
         void buildEngineMenu();
+
+        // Beginner / advanced interface, toolbar, ECU and launch test
+        // (app_ui_tools.cpp)
+        bool isBeginner() const { return m_preferences.uiMode != "advanced"; }
+        void buildToolbar(float y, float height);
+        void buildBeginnerControls();
+        void buildEcuWindow();
+        void buildMapEditor(EcuTable &table, EcuTable *stock, float height, double cursorX, double cursorY,
+            double minValue, double maxValue, double step, const char *format);
+        void buildLaunchTestWindow();
+        void buildWelcomeWindow();
+        void drawDesignDiagrams(const EngineDesign &design, float width);
+        void autoStart(double dt);
+        std::string tunePath() const;
+        void saveTune();
+        bool loadTune(bool quiet);
         void buildCylinderSelector();
         void buildCylinderPlot();
         void buildPvPlot();
@@ -171,6 +189,34 @@ class AppUi {
         bool m_showSettings;
         bool m_showDesigner;
         bool m_showLibrary;
+        bool m_showEcu = false;
+        bool m_showLaunchTest = false;
+        bool m_showWelcome = false;
+
+        // ECU window
+        int m_ecuTab = 0;
+        std::string m_ecuStatus;
+        int m_mapSelectRow = -1, m_mapSelectCol = -1;
+
+        // One-click start: ignition on, crank until the engine runs
+        bool m_autoStarting = false;
+        double m_autoStartTimer = 0;
+
+        // Launch test (timed in simulation time on the simulation thread)
+        struct LaunchResult {
+            std::string engine;
+            std::string setup;
+            double t60 = -1, t100 = -1, tQuarter = -1, trap = 0, t200 = -1;
+        };
+        enum class LaunchState { Idle, Staging, Running, Done };
+        LaunchState m_launchState = LaunchState::Idle;
+        double m_launchTime = 0;
+        double m_launchStartDistance = 0;
+        double m_launchStageTimer = 0;
+        bool m_launchAutomatic = true;
+        bool m_launchWasAutomatic = false;
+        LaunchResult m_launchCurrent;
+        std::vector<LaunchResult> m_launchResults;
         bool m_showTuning;
         bool m_showHelp;
         bool m_showAbout;

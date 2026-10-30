@@ -90,6 +90,11 @@ struct EngineDesign {
     bool blowoffValve = true;
     double intercoolerEffectiveness = 0.7;
     double driveRatio = 0;                      // superchargers, 0 = automatic
+    std::string blowoffType = "atmospheric";    // atmospheric, recirculating, none
+    std::string boostControl = "electronic";    // electronic, spring
+    bool externalWastegate = false;
+    bool twinScroll = false;
+    double whistlePitch = 1.0;
 
     // Ignition (crank angles before TDC)
     double idleAdvance = 0.21;                  // 12 degrees
@@ -98,7 +103,7 @@ struct EngineDesign {
 
     // Operating range [rpm]
     double redline = 7000;
-    double idleThrottle = 0.993;                // idle throttle plate position
+    double idleThrottle = 0.996;                // idle throttle plate position (the ECU adds air when the idle sags)
 
     // Inertia
     double flywheelMass = 9.0;                  // [kg]
@@ -110,6 +115,8 @@ struct EngineDesign {
 
     // Vehicle
     double vehicleMass = 1400;                  // [kg]
+    std::string drivetrain = "rwd";             // rwd, fwd, awd
+    double tireFriction = 1.1;                  // street 0.9, sport 1.1, semi-slick 1.3, drag slick 1.6
 
     // Derived quantities
     bool isRotary() const { return layout == Layout::Rotary; }

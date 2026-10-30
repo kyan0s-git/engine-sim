@@ -513,8 +513,10 @@ void EngineSimApplication::process(double elapsed) {
 
     auto proc_t0 = std::chrono::steady_clock::now();
     const int iterationCount = m_simulator->getFrameIterationCount();
+    const double timestep = m_simulator->getTimestep();
     while (m_simulator->simulateStep()) {
         m_ui.sampleSimulationStep();
+        m_ui.updateLaunchTest(timestep);
     }
 
     auto proc_t1 = std::chrono::steady_clock::now();

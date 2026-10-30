@@ -249,7 +249,7 @@ void Simulator::initializeSynthesizer() {
     synthParams.audioSampleRate = 44100;
     synthParams.inputBufferSize = 44100;
     synthParams.inputChannelCount = m_engine->getExhaustSystemCount();
-    synthParams.auxChannelCount = 3;
+    synthParams.auxChannelCount = 7;
     synthParams.inputSampleRate = static_cast<float>(getSimulationFrequency());
     m_synthesizer.initialize(synthParams);
 }

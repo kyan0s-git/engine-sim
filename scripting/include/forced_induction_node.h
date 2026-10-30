@@ -50,6 +50,15 @@ namespace es_script {
             params.ballBearings = (m_bearings == "ball");
             params.boost = m_boost;
             params.blowoffValve = m_blowoffValve;
+            params.blowoffType = (m_blowoffType == "recirculating") ? ForcedInduction::BlowoffType::Recirculating
+                : (m_blowoffType == "none") ? ForcedInduction::BlowoffType::None
+                : ForcedInduction::BlowoffType::Atmospheric;
+            params.boostControl = (m_boostControl == "spring")
+                ? ForcedInduction::BoostControl::Spring
+                : ForcedInduction::BoostControl::Electronic;
+            params.externalWastegate = (m_wastegate == "external");
+            params.twinScroll = m_twinScroll;
+            params.whistlePitch = m_whistlePitch;
             params.driveRatio = m_driveRatio;
             params.displacement = m_displacement;
             params.bypassValve = m_bypassValve;
@@ -84,6 +93,11 @@ namespace es_script {
             addInput("intercooler_effectiveness", &m_intercoolerEffectiveness);
             addInput("charge_volume", &m_chargeVolume);
             addInput("sequential_speed", &m_sequentialSpeed);
+            addInput("blowoff_type", &m_blowoffType);
+            addInput("boost_control", &m_boostControl);
+            addInput("wastegate", &m_wastegate);
+            addInput("twin_scroll", &m_twinScroll);
+            addInput("whistle_pitch", &m_whistlePitch);
 
             ObjectReferenceNode<ForcedInductionNode>::registerInputs();
         }
@@ -111,6 +125,11 @@ namespace es_script {
         double m_intercoolerEffectiveness = 0.7;
         double m_chargeVolume = 6e-3;
         double m_sequentialSpeed = 400.0;
+        std::string m_blowoffType = "atmospheric";
+        std::string m_boostControl = "electronic";
+        std::string m_wastegate = "internal";
+        bool m_twinScroll = false;
+        double m_whistlePitch = 1.0;
     };
 
 } /* namespace es_script */

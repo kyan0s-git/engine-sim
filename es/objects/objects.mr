@@ -927,6 +927,11 @@ private node _forced_induction => __engine_sim__forced_induction {
     input intercooler_effectiveness [float];
     input charge_volume [float];
     input sequential_speed [float];
+    input blowoff_type [string];
+    input boost_control [string];
+    input wastegate [string];
+    input twin_scroll [bool];
+    input whistle_pitch [float];
     alias output __out [forced_induction_channel];
 }
 
@@ -948,6 +953,11 @@ public node turbocharger {
     input intercooler_effectiveness: 0.7;
     input charge_volume: 6.0 * units.L;
     input sequential_speed: 4000 * units.rpm;
+    input blowoff_type: "atmospheric";      // "atmospheric", "recirculating" or "none"
+    input boost_control: "electronic";      // "electronic" or "spring"
+    input wastegate: "internal";            // "internal" or "external"
+    input twin_scroll: false;
+    input whistle_pitch: 1.0;
     alias output __out:
         _forced_induction(
             type: "turbo",
@@ -967,7 +977,12 @@ public node turbocharger {
             bypass_valve: false,
             intercooler_effectiveness: intercooler_effectiveness,
             charge_volume: charge_volume,
-            sequential_speed: sequential_speed
+            sequential_speed: sequential_speed,
+            blowoff_type: blowoff_type,
+            boost_control: boost_control,
+            wastegate: wastegate,
+            twin_scroll: twin_scroll,
+            whistle_pitch: whistle_pitch
         );
 }
 
@@ -987,6 +1002,8 @@ public node supercharger {
     input blowoff_valve: true;
     input intercooler_effectiveness: 0.0;
     input charge_volume: 4.0 * units.L;
+    input blowoff_type: "atmospheric";
+    input whistle_pitch: 1.0;
     alias output __out:
         _forced_induction(
             type: type,
@@ -1006,7 +1023,12 @@ public node supercharger {
             bypass_valve: bypass_valve,
             intercooler_effectiveness: intercooler_effectiveness,
             charge_volume: charge_volume,
-            sequential_speed: 0.0
+            sequential_speed: 0.0,
+            blowoff_type: blowoff_type,
+            boost_control: "electronic",
+            wastegate: "internal",
+            twin_scroll: false,
+            whistle_pitch: whistle_pitch
         );
 }
 

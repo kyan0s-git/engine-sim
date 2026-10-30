@@ -138,6 +138,13 @@ namespace {
             { "blowoff_valve", d.blowoffValve ? "1" : "0" },
             { "intercooler", exact(d.intercoolerEffectiveness) },
             { "drive_ratio", exact(d.driveRatio) },
+            { "blowoff_type", d.blowoffType },
+            { "boost_control", d.boostControl },
+            { "external_wastegate", d.externalWastegate ? "1" : "0" },
+            { "twin_scroll", d.twinScroll ? "1" : "0" },
+            { "whistle_pitch", exact(d.whistlePitch) },
+            { "drivetrain", d.drivetrain },
+            { "tire_friction", exact(d.tireFriction) },
             { "idle_advance", exact(d.idleAdvance) },
             { "max_advance", exact(d.maxAdvance) },
             { "max_advance_rpm", exact(d.maxAdvanceRpm) },
@@ -235,6 +242,11 @@ namespace {
               << "            bearings: \"" << (d.ballBearings ? "ball" : "journal") << "\",\n"
               << "            boost: " << num(d.boost / 1000.0) << " * units.kPa,\n"
               << "            blowoff_valve: " << (d.blowoffValve ? "true" : "false") << ",\n"
+              << "            blowoff_type: \"" << d.blowoffType << "\",\n"
+              << "            boost_control: \"" << d.boostControl << "\",\n"
+              << "            wastegate: \"" << (d.externalWastegate ? "external" : "internal") << "\",\n"
+              << "            twin_scroll: " << (d.twinScroll ? "true" : "false") << ",\n"
+              << "            whistle_pitch: " << num(d.whistlePitch) << ",\n"
               << "            intercooler_effectiveness: " << num(d.intercoolerEffectiveness) << ",\n"
               << "            charge_volume: " << num(std::max(3.0, 2.0 * d.displacement() * 1000)) << " * units.L,\n"
               << "            sequential_speed: " << num(0.55 * d.redline) << " * units.rpm\n"
@@ -261,6 +273,8 @@ namespace {
               << "            compressor_diameter: " << num(diameter * 1000) << " * units.mm,\n"
               << "            compressor_flow: " << num(flow) << " * units.kg / units.sec,\n"
               << "            blowoff_valve: " << (d.blowoffValve ? "true" : "false") << ",\n"
+              << "            blowoff_type: \"" << d.blowoffType << "\",\n"
+              << "            whistle_pitch: " << num(d.whistlePitch) << ",\n"
               << "            intercooler_effectiveness: " << num(d.intercoolerEffectiveness) << ",\n"
               << "            charge_volume: " << num(std::max(3.0, 2.0 * d.displacement() * 1000)) << " * units.L\n"
               << "        )\n"
@@ -296,7 +310,9 @@ namespace {
           << "            cross_sectional_area: 2.2 * units.m2,\n"
           << "            diff_ratio: 3.7,\n"
           << "            tire_radius: 0.31 * units.m,\n"
-          << "            rolling_resistance: " << num(0.015 * d.vehicleMass * 9.81) << "\n"
+          << "            rolling_resistance: " << num(0.015 * d.vehicleMass * 9.81) << ",\n"
+          << "            tire_friction: " << num(d.tireFriction) << ",\n"
+          << "            driven_weight_fraction: " << num(d.drivetrain == "awd" ? 1.0 : (d.drivetrain == "fwd" ? 0.55 : 0.6)) << "\n"
           << "        );\n"
           << "}\n\n"
           << "private node designed_transmission {\n"
@@ -644,6 +660,11 @@ bool EngineDesign::validate() {
     compressorScale = std::clamp(compressorScale, 0.4, 2.5);
     intercoolerEffectiveness = std::clamp(intercoolerEffectiveness, 0.0, 1.0);
     driveRatio = std::clamp(driveRatio, 0.0, 25.0);
+    if (blowoffType != "recirculating" && blowoffType != "none") blowoffType = "atmospheric";
+    if (boostControl != "spring") boostControl = "electronic";
+    whistlePitch = std::clamp(whistlePitch, 0.25, 4.0);
+    if (drivetrain != "fwd" && drivetrain != "awd") drivetrain = "rwd";
+    tireFriction = std::clamp(tireFriction, 0.3, 2.0);
 
     idleAdvance = std::clamp(idleAdvance, 0.0, 40 * Deg);
     maxAdvance = std::clamp(maxAdvance, idleAdvance, 60 * Deg);
@@ -1104,6 +1125,13 @@ bool readEngineDesign(const std::string &scriptText, EngineDesign *design) {
     number("compressor_scale", &d.compressorScale);
     number("intercooler", &d.intercoolerEffectiveness);
     number("drive_ratio", &d.driveRatio);
+    text("blowoff_type", &d.blowoffType);
+    text("boost_control", &d.boostControl);
+    flag("external_wastegate", &d.externalWastegate);
+    flag("twin_scroll", &d.twinScroll);
+    number("whistle_pitch", &d.whistlePitch);
+    text("drivetrain", &d.drivetrain);
+    number("tire_friction", &d.tireFriction);
     number("idle_advance", &d.idleAdvance);
     number("max_advance", &d.maxAdvance);
     number("max_advance_rpm", &d.maxAdvanceRpm);

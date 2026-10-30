@@ -6,6 +6,14 @@
 // Preferences edited on the settings page and stored in settings.ini in the
 // user data folder. Unit names left empty follow the theme script.
 struct UserPreferences {
+    // Interface: "beginner" (essential controls and pictures of the design
+    // settings) or "advanced" (everything)
+    std::string uiMode = "beginner";
+    bool firstRun = true;
+
+    // ECU tunes saved for an engine are loaded with it
+    bool autoLoadTunes = true;
+
     // Display
     bool fullscreen = false;
     bool vsync = true;

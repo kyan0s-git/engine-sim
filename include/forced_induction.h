@@ -50,6 +50,21 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
             Sequential      // the second turbocharger joins at high speed
         };
 
+        // Where the blow-off valve vents (or no valve: the compressor surges
+        // when the throttle closes)
+        enum class BlowoffType {
+            Atmospheric,
+            Recirculating,
+            None
+        };
+
+        // Spring: the actuator opens on charge pressure alone and lets the
+        // boost creep up at high flow; electronic: closed loop on the target
+        enum class BoostControl {
+            Spring,
+            Electronic
+        };
+
         struct Parameters {
             Type type = Type::Turbocharger;
             Arrangement arrangement = Arrangement::Single;
@@ -69,6 +84,11 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
             // Boost control
             double boost = 1.0e5;                   // wastegate set point (gauge) [Pa]
             bool blowoffValve = true;
+            BlowoffType blowoffType = BlowoffType::Atmospheric;
+            BoostControl boostControl = BoostControl::Electronic;
+            bool externalWastegate = false;     // larger, vents through its own pipe
+            bool twinScroll = false;            // divided turbine housing: better spool
+            double whistlePitch = 1.0;          // sound only
 
             // Superchargers
             double driveRatio = 1.0;                // compressor speed / crank speed
@@ -155,6 +175,14 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         double getBoostTarget() const { return m_boostTarget; }
         void setBlowoffValve(bool enabled) { m_blowoffEnabled = enabled; }
         bool hasBlowoffValve() const { return m_blowoffEnabled; }
+        void setBlowoffType(BlowoffType type) { m_blowoffType = type; m_blowoffEnabled = (type != BlowoffType::None); }
+        BlowoffType getBlowoffType() const { return m_blowoffEnabled ? m_blowoffType : BlowoffType::None; }
+        void setBoostControl(BoostControl control) { m_boostControl = control; }
+        BoostControl getBoostControl() const { return m_boostControl; }
+        bool hasExternalWastegate() const { return m_externalWastegate; }
+        bool isTwinScroll() const { return m_twinScroll; }
+        void setWhistlePitch(double pitch) { m_whistlePitch = pitch; }
+        double getWhistlePitch() const { return m_whistlePitch; }
         void setIntercoolerEffectiveness(double e);
         double getIntercoolerEffectiveness() const { return m_intercoolerEffectiveness; }
         void setDriveRatio(double ratio) { m_driveRatio = ratio; }
@@ -164,6 +192,9 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         double getWhineFrequency() const;   // [Hz]
         double getWhineLevel() const;       // [0, 1]
         double getBlowoffLevel() const;     // [0, 1]
+        double getFlowLevel() const;        // compressor flow [0, 1]
+        double getSurgeLevel() const { return m_surge; }    // [0, 1]
+        double getWastegateNoise() const;   // external wastegate venting [0, 1]
 
     protected:
         double centrifugalSourcePressureRatio(double omega) const;
@@ -221,6 +252,14 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         double m_blowoffFlowRate;
 
         double m_intercoolerEffectiveness;
+        BlowoffType m_blowoffType;
+        BoostControl m_boostControl;
+        bool m_externalWastegate;
+        bool m_twinScroll;
+        double m_whistlePitch;
+        double m_surge;
+        double m_wastegateIntegral;
+        double m_maxCompressorFlow;     // [kg/s]
         double m_compressorOutletTemperature;
 };
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(engine-sim
-    VERSION 0.4.0
+    VERSION 0.5.0
     DESCRIPTION "Real-time internal combustion engine simulator"
     LANGUAGES C CXX)
 
@@ -285,6 +285,7 @@ if (ENGINE_SIM_BUILD_APP)
         src/shaders.cpp
         src/engine_view.cpp
         src/ui/app_ui.cpp
+        src/ui/app_ui_tools.cpp
         src/ui/ui_widgets.cpp
 
         # Include files
@@ -412,6 +413,15 @@ if (ENGINE_SIM_BUILD_APP)
             install(TARGETS engine-sim-dyno RUNTIME DESTINATION .)
         else()
             install(TARGETS engine-sim-dyno RUNTIME DESTINATION bin)
+        endif()
+    endif()
+
+    # Command line acceleration test
+    if (TARGET engine-sim-drive)
+        if (APPLE)
+            install(TARGETS engine-sim-drive RUNTIME DESTINATION .)
+        else()
+            install(TARGETS engine-sim-drive RUNTIME DESTINATION bin)
         endif()
     endif()
 

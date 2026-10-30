@@ -28,16 +28,30 @@ A GPU driver supporting OpenGL 4.1 or newer is required. The installers aren't s
 
 ## User interface
 
-![Engine Simulator 0.4](docs/public/screenshots/main_v04.png?raw=true)
+![Engine Simulator 0.5](docs/public/screenshots/main_v05.png?raw=true)
+
+The interface has two modes, picked on the welcome screen and switched with the **Beginner / Advanced** buttons at the top right:
+
+- **Beginner**: a simple control panel (throttle presets, gear, brake, dyno, launch test), the main gauges, the automatic gearbox, and pictures in the designer that show what each setting does (the layout from the front, the cylinder to scale, the cam or port timing and the turbo or supercharger plumbing).
+- **Advanced**: every control, the analysis plots, the ECU's maps and all of the designer.
+
+The **toolbar** starts and stops the engine with one click (the starter is held until the engine runs), switches the automatic gearbox and the dyno, opens the Engines, Designer, ECU tuning and Launch test windows, and shows when an update is ready to install.
+
 
 - **Controls** (left): ignition, starter, throttle, gears, clutch, brake, dynamometer and slow motion. The keyboard shortcuts below work as well.
 - **Instruments** (right): tachometer, speedometer, manifold pressure (a boost gauge on turbocharged and supercharged engines) and air flow, turbo speed, wastegate and charge air temperatures, and the engineering outputs of the last complete cycle (torque, power, mean effective pressures, efficiencies, BSFC, burn angles, peak pressure and temperature).
 - **Analysis** (bottom): cylinder pressure and valve lift against crank angle, the p-V diagram, intake and exhaust flows, the dyno curve recorded while the dynamometer runs, speed/torque/manifold pressure history, the audio output and simulation performance.
 - **Engine library** (*File* > *Engine library*, Ctrl+L): presets of well-known engines (Honda K24, GM LS3, Toyota 2JZ-GTE, BMW B58, the 2026 Formula 1 V6, Chevrolet small-block 350, Chrysler 426 Hemi, Mazda 13B-REW, Porsche M97.74 and a Volkswagen W12) to load or customize, and your saved engines (load, edit, duplicate, delete).
 - **Engine designer** (*File* > *Engine designer*, Ctrl+D): build an engine from its parameters and run it: inline, V, flat (boxer), W (three or four banks) or rotary (Wankel) layouts, cylinder or rotor count, bore, stroke, rod length, compression ratio, firing order, valvetrain and cams (port timing for rotaries), intake and exhaust, exhaust sound, turbochargers and superchargers, ignition curve, fuel and mixture. Designs are saved (Save / Save as) as ordinary engine scripts in the user data folder (`assets/engines/custom`) and can be reopened in the designer or edited by hand.
+- **ECU tuning**: the ignition, fuel (lambda) and boost maps over engine speed and manifold pressure with the live operating point, rev limiter (hard or soft), launch control, overboost cut, idle speed control, anti-lag and the automatic gearbox's shift maps (full-throttle shifts can be optimized from the dyno curve). Economy, Performance and Race tunes are one click away; tunes are saved per engine (`tunes/` in the user data folder) and load with it.
+- **Launch test**: 0-60 mph, 0-100 km/h, 0-200 km/h and quarter mile times from a standing start, automatic or manual, with or without launch control. Acceleration is limited by tire grip on the driven wheels; the drivetrain and tires are set in the designer.
 - **Tuning** (*Simulation* > *Tuning*): change the ignition timing, rev limiter, mixture, combustion efficiency, wall temperature, heat transfer, friction, boost (wastegate), supercharger drive ratio, intercooler, blow-off valve, sound and simulation frequency of the running engine.
 - **Settings** (*File* > *Settings*, Ctrl+, or Cmd+, on macOS): fullscreen, vertical sync, interface scale and theme, engine view style (realistic shaded metal or the classic flat theme colors), units, master volume, muting in the background, simulation frequency and update checks.
 - **Console** (F5): script errors and messages.
+
+![ECU tuning](docs/public/screenshots/ecu_v05.png?raw=true)
+
+![Beginner mode with the designer's pictures](docs/public/screenshots/beginner_v05.png?raw=true)
 
 ![Engine library](docs/public/screenshots/library_v04.png?raw=true)
 
@@ -47,7 +61,7 @@ The simulation runs on its own thread, so the frame rate of the interface doesn'
 
 ## Turbochargers and superchargers
 
-Engines can have a turbocharger (single, twin or sequential) or a Roots, twin-screw or centrifugal supercharger, either from the designer's *Forced induction* tab or in a script with `add_forced_induction()` (see [docs/scripting.md](docs/scripting.md)). The compressor feeds a charge-air volume that the throttle draws from. A turbocharger's turbine sits in the exhaust and has to spool up; its wastegate holds the boost at the set point and a blow-off valve vents the charge when the throttle closes. Superchargers are driven by the crankshaft and take their drive power from it. The compressor whine and the blow-off valve are part of the sound.
+Engines can have a turbocharger (single, twin or sequential) or a Roots, twin-screw or centrifugal supercharger, either from the designer's *Forced induction* tab or in a script with `add_forced_induction()` (see [docs/scripting.md](docs/scripting.md)). The compressor feeds a charge-air volume that the throttle draws from. A turbocharger's turbine sits in the exhaust and has to spool up; its wastegate holds the boost at the set point and a blow-off valve vents the charge when the throttle closes. Superchargers are driven by the crankshaft and take their drive power from it. Options include the blow-off valve type (vented, recirculating or none, which lets the compressor flutter), electronic boost control or the wastegate spring alone (boost creeps), an external wastegate, a twin-scroll turbine and the pitch of the whistle or whine. The sound follows the hardware: the turbo whistle rises with the shaft speed, with intake whoosh, blow-off and wastegate noise, and Roots and twin-screw blowers whine with their lobes.
 
 ## Controls
 
@@ -102,7 +116,11 @@ engine-sim-app [options] [engine.mr]
   --windowed          Start in windowed mode
   --no-update-check   Don't check for new releases
   --version           Print the version and exit
+  --update-test [url] Install the latest release without the interface and
+                      relaunch it (used by the release workflow)
 ```
+
+`engine-sim-drive [--auto] [--preset economy|performance|race] [--launch <rpm>] <engine.mr>` runs a standing-start acceleration test without the interface and prints the times; `engine-sim-dyno` sweeps an engine on the dynamometer.
 
 The data directory is found automatically next to the executable (or inside the macOS app bundle). It can also be set with the `ENGINE_SIM_DATA_ROOT` environment variable.
 

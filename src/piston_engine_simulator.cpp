@@ -269,7 +269,7 @@ void PistonEngineSimulator::placeAndInitialize() {
     m_engine->getIgnitionModule()->reset();
 
     // Exhaust channels followed by the forced induction control channels
-    m_exhaustFlowStagingBuffer = new double[m_engine->getExhaustSystemCount() + 3];
+    m_exhaustFlowStagingBuffer = new double[m_engine->getExhaustSystemCount() + 7];
 }
 
 void PistonEngineSimulator::placeCylinder(int i) {
@@ -492,11 +492,23 @@ void PistonEngineSimulator::writeToSynthesizer() {
     }
 
     double *aux = m_exhaustFlowStagingBuffer + exhaustSystemCount;
-    aux[0] = aux[1] = aux[2] = 0;
+    for (int i = 0; i < 7; ++i) aux[i] = 0;
     if (forcedInduction != nullptr) {
-        aux[0] = forcedInduction->getWhineFrequency();
+        int type = 1;
+        switch (forcedInduction->getType()) {
+        case ForcedInduction::Type::Roots: type = 2; break;
+        case ForcedInduction::Type::TwinScrew: type = 3; break;
+        case ForcedInduction::Type::Centrifugal: type = 4; break;
+        default: break;
+        }
+
+        aux[0] = forcedInduction->getWhineFrequency() * forcedInduction->getWhistlePitch();
         aux[1] = forcedInduction->getWhineLevel();
         aux[2] = forcedInduction->getBlowoffLevel();
+        aux[3] = forcedInduction->getFlowLevel();
+        aux[4] = forcedInduction->getSurgeLevel();
+        aux[5] = forcedInduction->getWastegateNoise();
+        aux[6] = 10 * type + static_cast<int>(forcedInduction->getBlowoffType());
     }
 
     synthesizer().writeInput(m_exhaustFlowStagingBuffer);

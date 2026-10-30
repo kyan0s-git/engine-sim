@@ -35,9 +35,10 @@ Synthesizer::Synthesizer() {
     m_noiseState = 0x9E3779B9u;
 
     m_whinePhase = 0;
+    m_vibratoPhase = 0;
+    m_flutterPhase = 0;
+    m_fiCounter = 0;
     m_mixEnvelope = 0;
-    m_hissLow = 0;
-    m_hissHigh = 0;
 }
 
 Synthesizer::~Synthesizer() {
@@ -362,45 +363,132 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
     }
 }
 
-void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters) {
-    if (m_auxChannelCount < 3) return;
+void Synthesizer::Bandpass::set(float f, float q, float fs) {
+    const float w0 = 2.0f * 3.14159265f * std::clamp(f, 20.0f, 0.45f * fs) / fs;
+    const float alpha = std::sin(w0) / (2.0f * q);
+    const float a0 = 1.0f + alpha;
+    b0 = alpha / a0;
+    b2 = -alpha / a0;
+    a1 = -2.0f * std::cos(w0) / a0;
+    a2 = (1.0f - alpha) / a0;
+}
 
-    const float *frequency = m_inputChannels[m_inputChannelCount + 0].transferBuffer;
-    const float *whine = m_inputChannels[m_inputChannelCount + 1].transferBuffer;
-    const float *blowoff = m_inputChannels[m_inputChannelCount + 2].transferBuffer;
+float Synthesizer::Bandpass::process(float x) {
+    const float y = b0 * x + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+    if (std::fpclassify(y1) == FP_SUBNORMAL) y1 = 0;
+    return y;
+}
+
+// Turbocharger and supercharger sounds, driven by control channels from the
+// simulation: [0] shaft or rotor frequency [Hz] (times the whistle pitch),
+// [1] whine level, [2] blow-off flow, [3] compressor flow, [4] surge,
+// [5] external wastegate venting, [6] mode (10 * type + blow-off type;
+// types 1 turbo, 2 Roots, 3 twin-screw, 4 centrifugal; blow-off 0 vented,
+// 1 recirculating, 2 none)
+void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters) {
+    if (m_auxChannelCount < 7) return;
+
+    const float *const *aux = m_auxPointers;
+    for (int k = 0; k < 7; ++k) m_auxPointers[k] = m_inputChannels[m_inputChannelCount + k].transferBuffer;
+
+    const int mode = static_cast<int>(std::lround(aux[6][0]));
+    const int type = mode / 10;
+    const int blowoffType = mode % 10;
+    if (type == 0) return;
 
     const float volume = parameters.forcedInductionVolume;
-    const float envelopeDecay = 1.0f - 1.0f / (0.3f * m_audioSampleRate);
-    const float floor = 0.1f * parameters.levelerTarget;
+    const float fs = m_audioSampleRate;
+    const float envelopeDecay = 1.0f - 1.0f / (0.3f * fs);
+    const float floor = 0.08f * parameters.levelerTarget;
     const double twoPi = 2 * 3.14159265358979323846;
-    const double nyquist = 0.45 * m_audioSampleRate;
 
     for (int j = 0; j < n; ++j) {
-        // The forced induction sounds follow the loudness of the engine
+        // The sounds follow the loudness of the engine (with a floor so that
+        // a blow-off on a quiet overrun is still heard)
         const float a = std::abs(m_mixBuffer[j]);
         m_mixEnvelope = std::max(a * (1 - envelopeDecay) + m_mixEnvelope * envelopeDecay, 0.0f);
+        const float reference = 0.8f * m_mixEnvelope + floor;
 
-        float out = 0;
-        const double f = std::min(static_cast<double>(std::max(frequency[j], 0.0f)), nyquist / 2);
-        m_whinePhase += twoPi * f / m_audioSampleRate;
-        if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
+        const float shaft = std::max(aux[0][j], 0.0f);
+        const float whine = std::max(aux[1][j], 0.0f);
+        const float blowoff = std::max(aux[2][j], 0.0f);
+        const float flow = std::max(aux[3][j], 0.0f);
+        const float surge = std::max(aux[4][j], 0.0f);
+        const float wastegate = std::max(aux[5][j], 0.0f);
 
-        const float whineLevel = std::max(whine[j], 0.0f);
-        if (whineLevel > 0) {
-            const float tone = static_cast<float>(
-                std::sin(m_whinePhase) + 0.35 * std::sin(2 * m_whinePhase));
-            out += whineLevel * tone * (0.8f * m_mixEnvelope + floor * 0.3f);
+        // Filter centres follow the shaft speed; updated every 32 samples
+        float tonal = 0;
+        if (type == 1 || type == 4) {
+            const float pitch = std::clamp(400.0f + ((type == 1) ? 2.4f : 2.0f) * shaft, 300.0f, 9000.0f);
+            if ((m_fiCounter++ & 31) == 0) {
+                m_whistleBand.set(pitch, 18.0f, fs);
+                m_whooshBand.set(500.0f + 0.35f * pitch, 0.9f, fs);
+            }
+
+            // A slightly wavering tone inside a narrow band of air noise
+            m_vibratoPhase += twoPi * 5.3 / fs;
+            if (m_vibratoPhase > twoPi) m_vibratoPhase -= twoPi;
+            m_whinePhase += twoPi * pitch * (1.0 + 0.003 * std::sin(m_vibratoPhase)) / fs;
+            if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
+
+            const float tone = static_cast<float>(std::sin(m_whinePhase));
+            const float air = 5.0f * m_whistleBand.process(noise());
+            const float toneShare = (type == 4) ? 0.65f : 0.45f;
+            tonal += whine * (toneShare * tone + (1.0f - toneShare) * air);
+            tonal += 0.45f * flow * flow * m_whooshBand.process(noise());
+        }
+        else {
+            // Supercharger rotor whine: lobe passing frequency with harmonics
+            const double lobes = (type == 2) ? 6.0 : 5.0;
+            const double f = std::min(shaft * lobes, 0.2 * fs);
+            m_whinePhase += twoPi * f / fs;
+            if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
+            const double p = m_whinePhase;
+            float tone = 0;
+            if (type == 2) {
+                tone = static_cast<float>(std::sin(p) + 0.55 * std::sin(2 * p) + 0.35 * std::sin(3 * p) + 0.2 * std::sin(4 * p));
+            }
+            else {
+                tone = static_cast<float>(std::sin(p) + 0.45 * std::sin(3 * p) + 0.25 * std::sin(5 * p));
+            }
+
+            if ((m_fiCounter++ & 31) == 0) {
+                m_whistleBand.set(static_cast<float>(2.0 * f + 200.0), 6.0f, fs);
+            }
+            tonal += whine * (0.45f * tone + 1.5f * m_whistleBand.process(noise()));
         }
 
-        // Blow-off: band-limited hiss
-        const float r = noise();
-        m_hissLow += 0.35f * (r - m_hissLow);
-        m_hissHigh += 0.02f * (m_hissLow - m_hissHigh);
-        const float hiss = m_hissLow - m_hissHigh;
-        const float blowoffLevel = std::max(blowoff[j], 0.0f);
-        out += blowoffLevel * hiss * std::max(1.2f * m_mixEnvelope, 2.5f * floor);
+        // Compressor surge without a blow-off valve: a fluttering chop
+        float bursts = 0;
+        if (surge > 0.01f) {
+            m_flutterPhase += twoPi * (11.0 + 7.0 * surge) / fs;
+            if (m_flutterPhase > twoPi) m_flutterPhase -= twoPi;
+            const float gate = static_cast<float>(std::pow(std::max(std::sin(m_flutterPhase), 0.0), 3.0));
+            if ((m_fiCounter & 31) == 1) m_flutterBand.set(380.0f, 1.6f, fs);
+            bursts += 2.0f * surge * gate * m_flutterBand.process(noise());
+        }
 
-        m_mixBuffer[j] += volume * out;
+        // Blow-off: a sharp vented "pssh" or a soft recirculating whoosh
+        if (blowoff > 0.001f) {
+            if ((m_fiCounter & 31) == 2) {
+                m_blowoffBand1.set(blowoffType == 1 ? 1100.0f : 2600.0f, blowoffType == 1 ? 1.2f : 0.7f, fs);
+                m_blowoffBand2.set(6500.0f, 1.3f, fs);
+            }
+            const float r = noise();
+            bursts += (blowoffType == 1)
+                ? 0.7f * blowoff * m_blowoffBand1.process(r)
+                : blowoff * (1.6f * m_blowoffBand1.process(r) + 0.8f * m_blowoffBand2.process(r));
+        }
+
+        // External wastegate venting through its own pipe
+        if (wastegate > 0.01f) {
+            if ((m_fiCounter & 31) == 3) m_wastegateBand.set(1500.0f, 2.5f, fs);
+            bursts += 0.6f * wastegate * m_wastegateBand.process(noise());
+        }
+
+        m_mixBuffer[j] += volume * (tonal * (1.1f * m_mixEnvelope + 0.4f * floor) + bursts * reference * 1.5f);
     }
 }
 

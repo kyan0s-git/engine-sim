@@ -24,6 +24,9 @@ ln -s /opt/engine-sim/bin/engine-sim-app "$ROOT/usr/bin/engine-sim"
 if [ -f "$ROOT/opt/engine-sim/bin/engine-sim-dyno" ]; then
     ln -s /opt/engine-sim/bin/engine-sim-dyno "$ROOT/usr/bin/engine-sim-dyno"
 fi
+if [ -f "$ROOT/opt/engine-sim/bin/engine-sim-drive" ]; then
+    ln -s /opt/engine-sim/bin/engine-sim-drive "$ROOT/usr/bin/engine-sim-drive"
+fi
 
 sed 's|^Exec=.*|Exec=/opt/engine-sim/bin/engine-sim-app|' "$HERE/engine-sim.desktop" \
     > "$ROOT/usr/share/applications/engine-sim.desktop"

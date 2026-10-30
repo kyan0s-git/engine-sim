@@ -399,7 +399,9 @@ void Updater::check() {
         "curl -sSL --max-time 20"
         " -H " + quote("Accept: application/vnd.github+json") +
         " -H " + quote("User-Agent: engine-sim-updater") +
-        " -w " + quote("\n%{http_code}") +
+        // curl expands the \n itself: a real newline would end the command
+        // line under cmd.exe, leaving curl without its URL
+        " -w " + quote("\\n%{http_code}") +
         " " + quote(url);
 
     std::string output;

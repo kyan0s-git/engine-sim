@@ -84,6 +84,14 @@ ForcedInduction::ForcedInduction() {
 
     m_intercoolerEffectiveness = 0.7;
     m_compressorOutletTemperature = AmbientTemperature;
+    m_blowoffType = BlowoffType::Atmospheric;
+    m_boostControl = BoostControl::Electronic;
+    m_externalWastegate = false;
+    m_twinScroll = false;
+    m_whistlePitch = 1.0;
+    m_surge = 0;
+    m_wastegateIntegral = 0;
+    m_maxCompressorFlow = 0.3;
 }
 
 ForcedInduction::~ForcedInduction() {
@@ -129,7 +137,15 @@ void ForcedInduction::initialize(const Parameters &params) {
     const double turbineFlow = 0.5 * compressorFlow * std::pow(ar / 0.64, 0.9);
     m_turbineK = GasSystem::flowConstant(
         turbineFlow, 2.2 * Ambient, 1.2 * Ambient, 1000.0, 1.33);
-    m_wastegateK = 4.0 * m_turbineK;
+    m_externalWastegate = params.externalWastegate;
+    m_wastegateK = (m_externalWastegate ? 6.0 : 4.0) * m_turbineK;
+    m_twinScroll = params.twinScroll;
+    m_blowoffType = params.blowoffType;
+    m_boostControl = params.boostControl;
+    m_whistlePitch = clamp(params.whistlePitch, 0.25, 4.0);
+    m_maxCompressorFlow = clamp(params.compressorFlow, 0.01, 3.0);
+    m_surge = 0;
+    m_wastegateIntegral = 0;
     m_turbineEfficiency = clamp(params.turbineEfficiency, 0.3, 0.85);
     m_inertia = std::max(params.inertia, 1e-6);
 
@@ -140,7 +156,7 @@ void ForcedInduction::initialize(const Parameters &params) {
     m_sequentialSpeed = params.sequentialSpeed;
 
     m_boostTarget = std::max(params.boost, 0.0);
-    m_blowoffEnabled = params.blowoffValve;
+    m_blowoffEnabled = params.blowoffValve && params.blowoffType != BlowoffType::None;
     m_blowoffK = GasSystem::flowConstant(
         0.5 * compressorFlow, 2.0 * Ambient, 1.0 * Ambient, units::celcius(50.0), Gamma);
     if (isPositiveDisplacement()) {
@@ -236,7 +252,12 @@ void ForcedInduction::addExhaustFlow(double n, double T, double P, double hcr, d
     const double cp = constants::R * g / (g - 1);
     const double isentropicWork = cp * T * (1.0 - std::pow(P_out / P, (g - 1) / g));
 
-    m_turbineEnergy += m_turbineEfficiency * m_turbineFraction * n * isentropicWork;
+    // A twin-scroll housing keeps the exhaust pulses of the cylinder groups
+    // apart, which helps most at low flow
+    double efficiency = m_turbineEfficiency;
+    if (m_twinScroll) efficiency *= 1.0 + 0.12 * clamp(1.0 - m_turbineFraction * 0.5, 0.0, 1.0);
+
+    m_turbineEnergy += efficiency * m_turbineFraction * n * isentropicWork;
 }
 
 double ForcedInduction::centrifugalSourcePressureRatio(double omega) const {
@@ -284,6 +305,11 @@ void ForcedInduction::processCentrifugal(
     const double dn = -flow;   // moles into the charge air
 
     unit.compressorFlow = dn / dt;
+
+    // Reverse flow through the compressor: surge (the flutter heard without
+    // a blow-off valve)
+    const double reverse = std::max(-dn / dt * units::AirMolecularMass / (0.15 * m_maxCompressorFlow), 0.0);
+    m_surge = m_surge + (std::min(reverse, 1.0) - m_surge) * std::min(1.0, dt / 0.05);
 
     // Euler work of the impeller; reverse flow (surge) brakes the wheel too
     const double U = unit.omega * m_tipRadius;
@@ -344,13 +370,24 @@ void ForcedInduction::process(double dt) {
             else if (m_units[1].active && speed < 0.9 * m_sequentialSpeed) m_units[1].active = false;
         }
 
-        // Wastegate: a proportional actuator that starts to open 15% below
-        // the set point and is fully open at it
-        const double band = std::max(0.15 * m_boostTarget, units::pressure(0.5, units::psi));
-        const double wastegateTarget = (m_boostTarget > 0)
-            ? clamp((boost - (m_boostTarget - band)) / band, 0.0, 1.0)
-            : 1.0;
-        m_wastegate = approach(m_wastegate, wastegateTarget, dt, 0.03);
+        // Wastegate. Electronic control: proportional-integral on the boost
+        // error, holding the target. Spring actuator: opens from 75% of the
+        // set point and only fully at 120%, slowly, so boost overshoots and
+        // creeps up with the flow.
+        double wastegateTarget = 1.0;
+        if (m_boostTarget > 0) {
+            if (m_boostControl == BoostControl::Electronic) {
+                const double band = std::max(0.15 * m_boostTarget, units::pressure(0.5, units::psi));
+                const double error = (boost - m_boostTarget) / band;
+                m_wastegateIntegral = clamp(m_wastegateIntegral + 2.0 * error * dt, -1.0, 1.0);
+                wastegateTarget = clamp(1.0 + error + m_wastegateIntegral, 0.0, 1.0);
+            }
+            else {
+                wastegateTarget = clamp((boost - 0.75 * m_boostTarget) / (0.45 * m_boostTarget), 0.0, 1.0);
+            }
+        }
+        m_wastegate = approach(m_wastegate, wastegateTarget, dt,
+            (m_boostControl == BoostControl::Electronic) ? 0.03 : 0.12);
 
         int activeUnits = 0;
         for (int i = 0; i < m_unitCount; ++i) {
@@ -478,6 +515,15 @@ double ForcedInduction::getWhineLevel() const {
     const double flow = clamp(
         std::abs(getCompressorFlow()) * units::AirMolecularMass / 0.3, 0.0, 1.0);
     return s * s * (0.25 + 0.75 * flow);
+}
+
+double ForcedInduction::getFlowLevel() const {
+    return clamp(std::abs(getCompressorFlow()) * units::AirMolecularMass / std::max(m_maxCompressorFlow, 0.01), 0.0, 1.0);
+}
+
+double ForcedInduction::getWastegateNoise() const {
+    if (!m_externalWastegate || !isTurbocharger()) return 0.0;
+    return clamp(m_wastegate * (1.0 - m_turbineFraction) * 2.0, 0.0, 1.0);
 }
 
 double ForcedInduction::getBlowoffLevel() const {

@@ -42,6 +42,7 @@ namespace {
         double duration = 25;       // [s]
         double trace = 0.5;         // [s] between trace lines, 0 = none
         bool antiLag = false;
+        double idle = 1.0;          // [s] of idling before the launch
     };
 
     struct Loaded {
@@ -144,6 +145,7 @@ int main(int argc, char *argv[]) {
         else if (arg == "--time" && value) options.duration = std::atof(argv[++i]);
         else if (arg == "--trace" && value) options.trace = std::atof(argv[++i]);
         else if (arg == "--anti-lag") options.antiLag = true;
+        else if (arg == "--idle" && value) options.idle = std::atof(argv[++i]);
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--auto] [--preset economy|performance|race] [--tune <file>]\n"
@@ -191,6 +193,7 @@ int main(int argc, char *argv[]) {
     }
     if (options.antiLag) ecu.settings().antiLag = true;
     ecu.settings().automatic = options.automatic;
+    if (std::getenv("DRIVE_NO_IDLE_CONTROL") != nullptr) ecu.settings().idleControl = false;
 
     Transmission *transmission = loaded.transmission;
     Vehicle *vehicle = loaded.vehicle;
@@ -198,10 +201,21 @@ int main(int argc, char *argv[]) {
     // Start the engine and let it idle
     engine->getIgnitionModule()->m_enabled = true;
     engine->setSpeedControl(0.0);
+    const bool idleTrace = (std::getenv("DRIVE_IDLE_TRACE") != nullptr);
+    double traceClock = 0, lastTrace = -1;
+    auto idleSample = [&](double dt) {
+        traceClock += dt;
+        if (idleTrace && traceClock - lastTrace >= 0.1) {
+            lastTrace = traceClock;
+            std::fprintf(stderr, "  %.2f s %5.0f rpm idle air %.3f map %.0f kPa\n",
+                traceClock, engine->getRpm(), simulator->getEcu().state().idleAir,
+                simulator->getEcu().state().load);
+        }
+    };
     simulator->m_starterMotor.m_enabled = true;
-    run(simulator, 1.5, [](double) {});
+    run(simulator, 1.5, idleSample);
     simulator->m_starterMotor.m_enabled = false;
-    run(simulator, 1.0, [](double) {});
+    run(simulator, options.idle, idleSample);
 
     const double idleRpm = engine->getRpm();
     std::fprintf(stderr, "%s: %.2f L, idle %.0f rpm, %s gearbox\n",
@@ -218,11 +232,12 @@ int main(int argc, char *argv[]) {
         run(simulator, 1.0, [](double) {});
     }
 
-    std::printf("t_s,rpm,gear,speed_kmh,distance_m,boost_kPa,clutch,throttle\n");
+    std::printf("t_s,rpm,gear,speed_kmh,distance_m,boost_kPa,target_kPa,clutch,throttle,flags\n");
 
     double t = 0, nextTrace = 0;
     double t60 = -1, t100 = -1, tQuarter = -1, trap = 0, peakSpeed = 0;
-    int shifts = 0, lastGear = transmission->getGear();
+    int shifts = 0, lastGear = transmission->getGear(), overboostCuts = 0;
+    bool lastOverboost = false;
     double clutchRamp = 0, shiftTimer = 0;
     const double startDistance = vehicle->getTravelledDistance();
 
@@ -256,6 +271,10 @@ int main(int argc, char *argv[]) {
             if (t100 < 0 && speed >= 100.0 / 3.6) t100 = t;
             if (tQuarter < 0 && distance >= 402.336) { tQuarter = t; trap = speed; }
 
+            const bool overboost = simulator->getEcu().state().overboost;
+            if (overboost && !lastOverboost) ++overboostCuts;
+            lastOverboost = overboost;
+
             if (transmission->getGear() != lastGear) {
                 lastGear = transmission->getGear();
                 ++shifts;
@@ -265,13 +284,17 @@ int main(int argc, char *argv[]) {
         if (options.trace > 0 && t >= nextTrace) {
             nextTrace += options.trace;
             const ForcedInduction *fi = engine->getForcedInduction();
-            std::printf("%.2f,%.0f,%d,%.1f,%.1f,%.1f,%.2f,%.2f\n",
+            const Ecu::State &ecuState = simulator->getEcu().state();
+            std::printf("%.2f,%.0f,%d,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f,%s%s%s%s\n",
                 t, engine->getRpm(), transmission->getGear() + 1,
                 std::abs(vehicle->getSpeed()) * 3.6,
                 vehicle->getTravelledDistance() - startDistance,
                 (fi != nullptr) ? fi->getBoost() / 1000.0 : 0.0,
+                ecuState.boostTarget,
                 transmission->getClutchPressure(),
-                engine->getSpeedControl());
+                engine->getSpeedControl(),
+                ecuState.overboost ? "O" : "", ecuState.limiting ? "L" : "",
+                ecuState.shifting ? "S" : "", ecuState.launchActive ? "C" : "");
         }
 
         if (tQuarter > 0 && t > tQuarter + 0.5) break;
@@ -279,9 +302,9 @@ int main(int argc, char *argv[]) {
 
     auto result = [](double v) { return v < 0 ? std::string("-") : std::to_string(v).substr(0, 5) + " s"; };
     std::fprintf(stderr,
-        "0-60 mph %s, 0-100 km/h %s, quarter mile %s at %.0f km/h, top speed reached %.0f km/h, %d gear changes\n",
+        "0-60 mph %s, 0-100 km/h %s, quarter mile %s at %.0f km/h, top speed reached %.0f km/h, %d gear changes, %d overboost cuts\n",
         result(t60).c_str(), result(t100).c_str(), result(tQuarter).c_str(),
-        trap * 3.6, peakSpeed * 3.6, shifts);
+        trap * 3.6, peakSpeed * 3.6, shifts, overboostCuts);
 
     simulator->endAudioRenderingThread();
     simulator->releaseSimulation();

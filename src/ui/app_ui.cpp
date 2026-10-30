@@ -246,6 +246,8 @@ bool AppUi::initialize(EngineSimApplication *app, SDL_Window *window) {
     ysOpenGLSdlContext::SetPresentHook(presentHook, this);
 
     m_initialized = true;
+    m_showWelcome = m_preferences.firstRun;
+    if (!isBeginner() && m_layout == Layout::Instruments) m_layout = Layout::Full;
 
     applyStyle();
     rebuildFonts();
@@ -383,6 +385,18 @@ void AppUi::onEngineLoaded(Engine *engine, Simulator *simulator) {
 
     // Generated engines can be opened in the designer again
     openDesignFromScript(m_app->getEngineScriptPath());
+
+    // A tune saved for this engine replaces the stock ECU maps
+    m_ecuStatus.clear();
+    m_launchState = LaunchState::Idle;
+    m_autoStarting = false;
+    if (simulator != nullptr && isBeginner()) {
+        // Beginners drive with the automatic gearbox
+        simulator->getEcu().settings().automatic = true;
+    }
+    if (engine != nullptr && m_preferences.autoLoadTunes && loadTune(true)) {
+        log("Loaded the saved ECU tune for " + engine->getName());
+    }
 
     if (m_app->hasScriptErrors()) {
         m_showConsole = true;
@@ -854,13 +868,23 @@ void AppUi::build() {
 
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     const float statusHeight = ImGui::GetFrameHeight() + 6.0f * s;
+    const float toolbarHeight = ImGui::GetFrameHeight() + 10.0f * s;
     ImVec2 pos = viewport->WorkPos;
     ImVec2 size = ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - statusHeight);
 
+    autoStart(ImGui::GetIO().DeltaTime);
+    if (m_layout != Layout::EngineOnly) {
+        buildToolbar(pos.y, toolbarHeight);
+        pos.y += toolbarHeight;
+        size.y -= toolbarHeight;
+    }
+
     buildStatusBar();
 
-    const bool showControls = (m_layout == Layout::Full);
-    const bool showPlots = (m_layout == Layout::Full);
+    // Beginner mode: the simple controls and the gauges, no analysis plots
+    const bool beginner = isBeginner();
+    const bool showControls = beginner ? (m_layout != Layout::EngineOnly) : (m_layout == Layout::Full);
+    const bool showPlots = !beginner && (m_layout == Layout::Full);
     const bool showInstruments = (m_layout != Layout::EngineOnly);
 
     // Panels around the engine view; their sizes can be changed by dragging
@@ -941,6 +965,9 @@ void AppUi::build() {
     if (m_showTuning) buildTuningWindow();
     if (m_showHelp) buildHelpWindow();
     if (m_showAbout) buildAboutWindow();
+    if (m_showEcu) buildEcuWindow();
+    if (m_showLaunchTest) buildLaunchTestWindow();
+    if (m_showWelcome) buildWelcomeWindow();
 
     ImGui::Render();
 
@@ -1222,6 +1249,11 @@ void AppUi::buildControlPanel() {
         return;
     }
 
+    if (isBeginner()) {
+        buildBeginnerControls();
+        return;
+    }
+
     // Engine
     ImGui::PushFont(m_font);
     ImGui::TextWrapped("%s", m_engine->getName().c_str());
@@ -1234,7 +1266,7 @@ void AppUi::buildControlPanel() {
     ImGui::Checkbox("Ignition [A]", &ignition->m_enabled);
 
     ImGui::Button("Hold to crank [S]", ImVec2(-FLT_MIN, 32 * s));
-    m_controls.starterHeld = ImGui::IsItemActive();
+    m_controls.starterHeld = ImGui::IsItemActive() || m_autoStarting;
 
     ImGui::Text("Throttle");
     ImGui::SameLine();
@@ -2544,6 +2576,12 @@ void AppUi::buildDesignerWindow() {
         }
     }
 
+    // Pictures of the settings: open by default for beginners
+    ImGui::SetNextItemOpen(isBeginner(), ImGuiCond_Appearing);
+    if (ImGui::CollapsingHeader("Pictures of the design")) {
+        drawDesignDiagrams(d, ImGui::GetContentRegionAvail().x);
+    }
+
     if (ImGui::BeginTabBar("##design")) {
         if (ImGui::BeginTabItem("Layout")) {
             label("Configuration");
@@ -2756,6 +2794,22 @@ void AppUi::buildDesignerWindow() {
                     ImGui::SameLine(); ui::HelpMarker("Smaller housings spool sooner but restrict the exhaust at high speed.");
                     label("Ball bearings");
                     ImGui::Checkbox("##ball", &d.ballBearings);
+                    label("Twin-scroll turbine");
+                    ImGui::Checkbox("##twinscroll", &d.twinScroll);
+                    ImGui::SameLine(); ui::HelpMarker("Keeps the exhaust pulses of different cylinders apart: "
+                        "more turbine energy at low flow, so it spools sooner.");
+
+                    label("Boost control");
+                    int control = (d.boostControl == "spring") ? 1 : 0;
+                    const char *controls[] = { "Electronic (boost controller)", "Wastegate spring only" };
+                    if (ImGui::Combo("##boostcontrol", &control, controls, 2)) d.boostControl = control ? "spring" : "electronic";
+                    ImGui::SameLine(); ui::HelpMarker("A spring-only wastegate starts to open early and lets the boost "
+                        "creep; a boost controller holds the target closely.");
+
+                    label("External wastegate");
+                    ImGui::Checkbox("##extwg", &d.externalWastegate);
+                    ImGui::SameLine(); ui::HelpMarker("A larger, separate wastegate: better boost control at high flow "
+                        "and its own screamer-pipe sound.");
                 }
                 else {
                     label("Drive ratio");
@@ -2772,8 +2826,16 @@ void AppUi::buildDesignerWindow() {
 
                 if (d.induction != EngineDesign::Induction::Roots && d.induction != EngineDesign::Induction::TwinScrew) {
                     label("Blow-off valve");
-                    ImGui::Checkbox("##bov", &d.blowoffValve);
+                    int bov = !d.blowoffValve ? 2 : (d.blowoffType == "recirculating" ? 1 : 0);
+                    const char *bovs[] = { "Vented (pssh)", "Recirculating (quiet)", "None (compressor flutter)" };
+                    if (ImGui::Combo("##bov", &bov, bovs, 3)) {
+                        d.blowoffValve = (bov != 2);
+                        d.blowoffType = (bov == 0) ? "atmospheric" : (bov == 1 ? "recirculating" : "none");
+                    }
                 }
+
+                label("Whine / whistle pitch");
+                sliderDouble("##whistle", &d.whistlePitch, 0.5, 2.0, "%.2fx");
 
                 label("Intercooler effectiveness");
                 sliderDouble("##intercooler", &d.intercoolerEffectiveness, 0.0, 0.95, "%.0f %%", 100.0);
@@ -2818,6 +2880,19 @@ void AppUi::buildDesignerWindow() {
             ImGui::SeparatorText("Vehicle");
             label("Vehicle mass");
             sliderDouble("##vehicle", &d.vehicleMass, 300, 5000, "%.0f kg");
+            label("Driven wheels");
+            int drive = (d.drivetrain == "fwd") ? 1 : (d.drivetrain == "awd" ? 2 : 0);
+            const char *drives[] = { "Rear (RWD)", "Front (FWD)", "All (AWD)" };
+            if (ImGui::Combo("##drivetrain", &drive, drives, 3)) d.drivetrain = (drive == 1) ? "fwd" : (drive == 2 ? "awd" : "rwd");
+            label("Tires");
+            {
+                const char *tires[] = { "Street", "Sport", "Semi-slick", "Drag slick" };
+                const double grip[] = { 0.9, 1.1, 1.3, 1.6 };
+                int tire = 0;
+                for (int i = 1; i < 4; ++i) if (std::abs(d.tireFriction - grip[i]) < std::abs(d.tireFriction - grip[tire])) tire = i;
+                if (ImGui::Combo("##tires", &tire, tires, 4)) d.tireFriction = grip[tire];
+                ImGui::SameLine(); ui::HelpMarker("Grip limits how much torque the driven wheels can take before they spin.");
+            }
             ImGui::EndTabItem();
         }
 
@@ -2907,18 +2982,29 @@ void AppUi::buildTuningWindow() {
         label("Timing offset");
         if (sliderDouble("##timing", &offset, -20 * Deg, 20 * Deg, "%+.1f deg", 1.0 / Deg)) ignition->setTimingOffset(offset);
 
-        double limit = ignition->getRevLimit();
+        Ecu::Settings &ecu = m_simulator->getEcu().settings();
+        double limit = ecu.enabled ? units::rpm(ecu.revLimit) : ignition->getRevLimit();
         label("Rev limiter");
         if (sliderDouble("##revlimit", &limit, units::rpm(1000), units::rpm(20000), "%.0f rpm", 1.0 / units::rpm(1))) {
             ignition->setRevLimit(limit);
+            ecu.revLimit = units::toRpm(limit);
         }
     }
+
+    // With the ECU's maps in charge, these sliders move the whole map
+    Ecu &ecu = m_simulator->getEcu();
+    const bool fuelMap = ecu.settings().enabled && ecu.settings().useFuelMap;
+    const bool boostMap = ecu.settings().enabled && ecu.settings().useBoostMap;
 
     if (m_engine->isEngineering()) {
         ImGui::SeparatorText("Mixture and combustion");
         double lambda = (m_engine->getIntakeCount() > 0) ? m_engine->getIntake(0)->getLambda() : 1.0;
-        label("Lambda");
+        label(fuelMap ? "Lambda (shifts the ECU fuel map)" : "Lambda");
         if (sliderDouble("##lambda", &lambda, 0.6, 1.6, "%.2f")) {
+            if (fuelMap) {
+                const double delta = lambda - ecu.state().lambda;
+                for (double &v : ecu.settings().lambda.v) v = std::clamp(v + delta, 0.6, 1.6);
+            }
             for (int i = 0; i < m_engine->getIntakeCount(); ++i) m_engine->getIntake(i)->setLambda(lambda);
         }
 
@@ -2951,6 +3037,11 @@ void AppUi::buildTuningWindow() {
             label("Boost target (wastegate)");
             const double unit = imperial ? units::pressure(1.0, units::psi) : units::pressure(1.0, units::bar);
             if (sliderDouble("##boost", &boost, 0.0, units::pressure(3.0, units::bar), imperial ? "%.1f psi" : "%.2f bar", 1.0 / unit)) {
+                if (boostMap) {
+                    // The map is in kPa
+                    const double delta = (boost - fi->getBoostTarget()) / 1000.0;
+                    for (double &v : ecu.settings().boost.v) v = std::clamp(v + delta, 0.0, 300.0);
+                }
                 fi->setBoostTarget(boost);
             }
         }
@@ -2998,6 +3089,9 @@ void AppUi::buildTuningWindow() {
     if (ImGui::Button("Restore script values")) {
         ignition->setTimingOffset(defaults.timingOffset);
         ignition->setRevLimit(defaults.revLimit);
+        ecu.settings().revLimit = ecu.stock().revLimit;
+        ecu.settings().lambda = ecu.stock().lambda;
+        ecu.settings().boost = ecu.stock().boost;
         for (int i = 0; i < m_engine->getIntakeCount(); ++i) m_engine->getIntake(i)->setLambda(defaults.lambda);
         m_engine->getFuel()->setCombustionEfficiency(defaults.combustionEfficiency);
         m_engine->setWallTemperature(defaults.wallTemperature);

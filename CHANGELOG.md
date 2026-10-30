@@ -4,6 +4,77 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
+## [0.5.0] - 2026-10-30
+
+### Beginner and Advanced modes
+- A welcome screen on first start lets you pick Beginner or Advanced; the
+  switch at the top right changes it at any time.
+- Beginner mode shows a simple control panel (throttle presets, gear,
+  brake, dyno, launch test) and the main gauges, drives with the automatic
+  gearbox, and opens the designer with pictures of the design: the layout
+  seen from the front, the cylinder to scale, the cam or port timing and
+  the turbo or supercharger plumbing.
+- New toolbar: one-click Start/Stop engine (holds the starter until the
+  engine runs), automatic gearbox, dyno, and the Engines, Designer, ECU,
+  Launch test and Tuning windows, plus update status with an Install
+  button.
+
+### ECU tuning
+- An ECU now runs the engine: ignition, fuel (lambda) and boost maps over
+  engine speed and manifold pressure. The stock maps reproduce the engine
+  script exactly.
+- Map editor with a heat map and the live operating point, an editable
+  table, whole-map adjustments and reset to stock.
+- Hard or soft rev limiter, launch control, overboost cut, idle speed
+  control, anti-lag.
+- Ready-made Economy, Performance and Race tunes; tunes can be saved per
+  engine (and load with it), copied and pasted.
+
+### Automatic gearbox
+- Shifts at speeds from shift maps over throttle position; full-throttle
+  upshifts can be optimized from the dyno curve so that each shift keeps
+  the wheel torque highest. Shifts cut the power and work the clutch.
+- The Up/Down keys request shifts in either mode.
+
+### Launch test
+- Times 0-60 mph, 0-100 km/h, 0-200 km/h and the quarter mile from a
+  standing start, automatic or manual, with or without launch control,
+  and keeps a table of runs.
+- The car's acceleration is limited by tire grip on the driven wheels:
+  drivetrain (RWD, FWD, AWD) and tires (street to drag slick) are part of
+  a design. `engine-sim-drive` runs the same test from the command line.
+
+### Turbochargers and superchargers
+- New sound: turbo whistle that rises with the shaft speed, intake whoosh,
+  compressor surge flutter without a blow-off valve, vented or
+  recirculating blow-off valve, external wastegate, and Roots/twin-screw
+  lobe whine.
+- More options: blow-off valve type (vented, recirculating, none),
+  electronic boost control or wastegate spring only (boost creep), external
+  wastegate, twin-scroll turbine, whine/whistle pitch.
+
+### Fixes
+- Updater on Windows: the update check failed with "curl: no URL
+  specified" (a newline in the command line), so updates never installed.
+  Installs found from SDL's base path with a trailing separator looked
+  unpackaged. When an installation can't be replaced in place the platform
+  installer is downloaded and opened. The release workflow now installs
+  the latest release with the new build on each platform.
+- The dyno no longer switches itself off at the end of a sweep; a gear
+  change restarts the sweep.
+- Tuning window rev limit, mixture and boost sliders now move the ECU's
+  maps (the ECU used to override them).
+
+### Stress testing
+- Every preset was run through standing starts (manual, automatic, the
+  Race tune and launch control) with the new drive tool, which now also
+  reports the boost target, limiter, shift and overboost events. This found
+  and fixed: upshifts during wheelspin into a gear too tall to pull, the
+  overboost cut reacting to single intake pulses (rotaries and small
+  engines cut over and over; it now reads a filtered pressure and ignores
+  shifts), and the launch clutch bogging engines with little low-speed
+  torque (it now slips to hold a launch speed, like a torque converter).
+
 ## [0.4.0] - 2026-10-15
 
 ### Turbochargers and superchargers
