@@ -141,6 +141,45 @@ jobs:
         # Ad-hoc signature so that Apple Silicon Macs will run the binary
         run: codesign --force --deep --sign - "dist/$STAGE/Engine Simulator.app"
 
+      - name: Test the in-app updater
+        # Copies the package, lets it update itself to the latest published
+        # release (forced, even if older) and checks that the replaced
+        # installation starts and reports that release's version
+        shell: bash
+        run: |
+          T="$RUNNER_TEMP/updater-test"
+          rm -rf "$T"; mkdir -p "$T"
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            cp -R "dist/$STAGE/Engine Simulator.app" "$T/"
+            EXE="$T/Engine Simulator.app/Contents/MacOS/Engine Simulator"
+          else
+            cp -R "dist/$STAGE" "$T/pkg"
+            EXE="$T/pkg/bin/engine-sim-app"
+          fi
+          LATEST=$(curl -sS -H "Authorization: Bearer ${{ github.token }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')
+          echo "Latest release: $LATEST"
+          if [[ -z "$LATEST" ]]; then echo "No published release to update to"; exit 0; fi
+          OUT=""
+          for attempt in 1 2 3; do
+            if OUT=$("$EXE" --update-test); then break; fi
+            echo "$OUT"; OUT=""; sleep 20
+          done
+          echo "$OUT"
+          LOG=$(echo "$OUT" | sed -n 's/^Relaunch log: //p' | tr -d '\r')
+          if [[ -z "$LOG" && "$RUNNER_OS" == "Windows" ]]; then
+            # A GUI program's output may not reach the console
+            LOG="$APPDATA\\EngineSimulator\\engine-sim\\updates\\relaunch.log"
+          fi
+          if [[ "$RUNNER_OS" == "Windows" ]]; then LOG=$(cygpath -u "$LOG"); fi
+          for i in $(seq 1 90); do
+            if [[ -s "$LOG" ]] && grep -q "Engine Simulator" "$LOG"; then break; fi
+            sleep 2
+          done
+          cat "$LOG"
+          grep -q "Engine Simulator $LATEST" "$LOG"
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

@@ -1,8 +1,10 @@
 #include "../include/engine_sim_application.h"
+#include "../include/updater.h"
 
 #include <SDL.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -77,7 +79,55 @@ namespace {
 
 } /* namespace */
 
+// --update-test [release API URL]: checks for the latest release, installs it
+// (even if it isn't newer) and restarts into it with --version, writing the
+// output to <user data>/updates/relaunch.log. Used by CI to exercise the
+// in-app updater on every platform without a window.
+int runUpdateTest(int argc, char *argv[]) {
+    Updater::Parameters params;
+    params.currentVersion = EngineSimApplication::getBuildVersion();
+    params.force = true;
+    params.relaunchArguments = "--version";
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::strcmp(argv[i], "--update-test") == 0 && argv[i + 1][0] != '-') {
+            params.releaseUrl = argv[i + 1];
+        }
+    }
+
+    char *basePath = SDL_GetBasePath();
+    if (basePath != nullptr) {
+        params.executablePath = basePath;
+        SDL_free(basePath);
+    }
+
+    char *prefPath = SDL_GetPrefPath("EngineSimulator", "engine-sim");
+    if (prefPath != nullptr) {
+        params.userDataPath = prefPath;
+        SDL_free(prefPath);
+    }
+
+    const char *appImage = std::getenv("APPIMAGE");
+    if (appImage != nullptr) params.appImagePath = appImage;
+
+    params.relaunchLog = params.userDataPath + "updates/relaunch.log";
+
+    Updater updater;
+    updater.initialize(params);
+    std::printf("Install root: %s\n", updater.getInstallRoot().empty() ? "(none)" : updater.getInstallRoot().c_str());
+
+    std::string message;
+    const bool ok = updater.runSynchronously(&message);
+    std::printf("%s\n", message.c_str());
+    if (ok) std::printf("Relaunch log: %s\n", params.relaunchLog.c_str());
+    std::fflush(stdout);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--update-test") == 0) return runUpdateTest(argc, argv);
+    }
+
     EngineSimApplication::StartupOptions options;
     if (!parseArguments(argc, argv, &options)) {
         return 0;

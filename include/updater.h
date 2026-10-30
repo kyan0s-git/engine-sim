@@ -15,9 +15,10 @@
 // Installing downloads the package for this platform into the user data
 // folder and extracts it there. The new files are copied over the
 // installation by a small helper script once the application has exited,
-// after which the application is started again. Installing is only offered
-// for packaged installations in a writable location; otherwise the release
-// page is opened instead.
+// after which the application is started again. Installations that can't be
+// replaced in place (a system package, an application run from its disk
+// image) download the platform's installer and open it instead; the release
+// page is opened only when there is neither.
 class Updater {
     public:
         enum class State {
@@ -36,6 +37,11 @@ class Updater {
             std::string pageUrl;
             std::string assetName;
             std::string assetUrl;
+
+            // Installer for this platform (setup program, disk image, Debian
+            // package)
+            std::string installerName;
+            std::string installerUrl;
         };
 
         struct Parameters {
@@ -51,6 +57,12 @@ class Updater {
             // Running from an AppImage (the APPIMAGE environment variable):
             // the AppImage file is replaced instead of an installation folder
             std::string appImagePath;
+
+            // Testing: install the release even if it isn't newer, start the
+            // new version with these arguments and send its output to a file
+            bool force = false;
+            std::string relaunchArguments;
+            std::string relaunchLog;
         };
 
     public:
@@ -74,8 +86,16 @@ class Updater {
         // Short status for the user interface (upper case)
         std::string getStatusText() const;
 
-        // True if this is a packaged installation that can be replaced
-        bool canInstall() const { return !m_installRoot.empty(); }
+        // True if the update can be installed from the application: the
+        // installation can be replaced in place, or the release has an
+        // installer for this platform
+        bool canInstall() const;
+        bool canReplaceInPlace() const { return !m_installRoot.empty(); }
+        bool usesInstaller() const { return m_installerMode; }
+
+        // Runs a check, download and restart on the calling thread (the
+        // --update-test mode); returns a message describing the outcome
+        bool runSynchronously(std::string *message);
         const std::string &getInstallRoot() const { return m_installRoot; }
 
         // Version comparison: 1 if a is newer than b, -1 if older, 0 if equal
@@ -93,6 +113,7 @@ class Updater {
         // Package name suffix of this platform, e.g. "-linux-x64.tar.gz"
         static std::string platformAssetSuffix();
         static std::string appImageAssetSuffix() { return "-linux-x86_64.AppImage"; }
+        static std::string installerAssetSuffix();
 
         // Parses the GitHub "latest release" JSON; the asset is the one whose
         // name ends with `suffix` (default: platformAssetSuffix())
@@ -112,6 +133,7 @@ class Updater {
         std::string m_installRoot;
         std::string m_stagedPath;
         bool m_appImage = false;
+        bool m_installerMode = false;
 
         std::atomic<State> m_state;
         mutable std::mutex m_lock;

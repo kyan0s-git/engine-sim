@@ -293,6 +293,56 @@ size_t Updater::findJsonString(
     return std::string::npos;
 }
 
+std::string Updater::installerAssetSuffix() {
+#if defined(_WIN32)
+    return "-windows-x64-setup.exe";
+#elif defined(__APPLE__)
+    return "-macos-universal.dmg";
+#else
+    return "_amd64.deb";
+#endif
+}
+
+bool Updater::canInstall() const {
+    if (!m_installRoot.empty()) return true;
+    std::lock_guard<std::mutex> lock(m_lock);
+    return !m_release.installerUrl.empty();
+}
+
+bool Updater::runSynchronously(std::string *message) {
+    join();
+    m_state = State::Checking;
+    check();
+    if (m_state == State::Failed) {
+        *message = "Check failed: " + getError();
+        return false;
+    }
+    if (m_state != State::Available) {
+        *message = "No update available (latest " + getRelease().version + ")";
+        return false;
+    }
+    if (!canInstall()) {
+        *message = "This installation can't be updated from the application";
+        return false;
+    }
+
+    m_state = State::Downloading;
+    install();
+    if (m_state != State::ReadyToRestart) {
+        *message = "Install failed: " + getError();
+        return false;
+    }
+
+    if (!startRestart()) {
+        *message = "Could not start the update helper";
+        return false;
+    }
+
+    *message = "Updating " + (m_installRoot.empty() ? std::string("with the installer") : m_installRoot)
+        + " to " + getRelease().version;
+    return true;
+}
+
 std::string Updater::platformAssetSuffix() {
 #if defined(_WIN32)
     return "-windows-x64.zip";
@@ -317,15 +367,22 @@ bool Updater::parseRelease(const std::string &json, Release *release, const std:
     release->version = (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) ? tag.substr(1) : tag;
     findJsonString(json, "html_url", 0, &release->pageUrl);
 
+    auto endsWith = [](const std::string &s, const std::string &end) {
+        return s.size() >= end.size() && s.compare(s.size() - end.size(), end.size(), end) == 0;
+    };
+
+    const std::string installer = installerAssetSuffix();
     size_t pos = 0;
     std::string url;
     while ((pos = findJsonString(json, "browser_download_url", pos, &url)) != std::string::npos) {
-        if (url.size() >= suffix.size()
-            && url.compare(url.size() - suffix.size(), suffix.size(), suffix) == 0)
-        {
+        const std::string name = url.substr(url.find_last_of('/') + 1);
+        if (release->assetUrl.empty() && endsWith(url, suffix)) {
             release->assetUrl = url;
-            release->assetName = url.substr(url.find_last_of('/') + 1);
-            break;
+            release->assetName = name;
+        }
+        else if (release->installerUrl.empty() && endsWith(url, installer)) {
+            release->installerUrl = url;
+            release->installerName = name;
         }
     }
 
@@ -378,20 +435,49 @@ void Updater::check() {
         m_release = release;
     }
 
-    m_state = (compareVersions(release.version, m_params.currentVersion) > 0)
+    m_state = (m_params.force || compareVersions(release.version, m_params.currentVersion) > 0)
         ? State::Available
         : State::UpToDate;
 }
 
 void Updater::install() {
     const Release release = getRelease();
+    std::error_code ec;
+    const fs::path updates = fs::path(m_params.userDataPath) / "updates";
+
+    // Not replaceable in place: download the installer and open it
+    if (m_installRoot.empty()) {
+        if (release.installerUrl.empty()) {
+            fail("The release has no installer for this platform");
+            return;
+        }
+
+        fs::create_directories(updates, ec);
+        const fs::path installer = updates / release.installerName;
+        std::string output;
+        const std::string download =
+            "curl -fsSL --max-time 900 -H " + quote("User-Agent: engine-sim-updater")
+            + " -o " + quote(installer.string()) + " " + quote(release.installerUrl);
+        if (runCommand(download, &output) != 0 || fs::file_size(installer, ec) < 1024 * 1024) {
+            fail("Download failed: " + output.substr(0, 200));
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(m_lock);
+            m_stagedPath = installer.string();
+        }
+
+        m_installerMode = true;
+        m_state = State::ReadyToRestart;
+        return;
+    }
+
     if (release.assetUrl.empty()) {
         fail("The release has no package for this platform");
         return;
     }
 
-    std::error_code ec;
-    const fs::path updates = fs::path(m_params.userDataPath) / "updates";
     const fs::path staging = updates / "staging";
     const fs::path archive = updates / release.assetName;
     fs::remove_all(staging, ec);
@@ -494,6 +580,31 @@ bool Updater::startRestart() {
 
     const fs::path updates = fs::path(m_params.userDataPath) / "updates";
 
+    if (m_installerMode) {
+        // The installer takes over; the application exits
+#if defined(_WIN32)
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi = {};
+        std::string commandLine = quote(staged);
+        std::vector<char> buffer(commandLine.begin(), commandLine.end());
+        buffer.push_back('\0');
+        if (!CreateProcessA(nullptr, buffer.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            return false;
+        }
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return true;
+#elif defined(__APPLE__)
+        return runCommand("open " + quote(staged), nullptr) == 0;
+#else
+        return runCommand("xdg-open " + quote(staged) + " >/dev/null 2>&1 &", nullptr) == 0;
+#endif
+    }
+
+    std::string relaunch = m_params.relaunchArguments.empty() ? "" : " " + m_params.relaunchArguments;
+    if (!m_params.relaunchLog.empty()) relaunch += " > " + quote(m_params.relaunchLog) + " 2>&1";
+
 #ifdef _WIN32
     const fs::path script = updates / "apply_update.cmd";
     const DWORD pid = GetCurrentProcessId();
@@ -514,7 +625,10 @@ bool Updater::startRestart() {
             << "if exist " << quote((fs::path(m_installRoot) / "uninstall.exe").string())
             << " reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\EngineSimulator\""
             << " /v DisplayVersion /d " << quote(getRelease().version) << " /f >NUL 2>&1\r\n"
-            << "start \"\" " << quote((fs::path(m_installRoot) / "bin" / "engine-sim-app.exe").string()) << "\r\n";
+            ;
+        const std::string exe = quote((fs::path(m_installRoot) / "bin" / "engine-sim-app.exe").string());
+        if (m_params.relaunchLog.empty()) file << "start \"\" " << exe << relaunch << "\r\n";
+        else file << exe << relaunch << "\r\n";
     }
 
     STARTUPINFOA si = {};
@@ -548,17 +662,22 @@ bool Updater::startRestart() {
         file << "rm -rf " << quote(app + ".new") << "\n"
             << "ditto " << quote(staged + "/Engine Simulator.app") << " " << quote(app + ".new")
             << " && rm -rf " << quote(app) << " && mv " << quote(app + ".new") << " " << quote(app) << "\n"
-            << "xattr -dr com.apple.quarantine " << quote(app) << " 2>/dev/null\n"
-            << "open " << quote(app) << "\n";
+            << "xattr -dr com.apple.quarantine " << quote(app) << " 2>/dev/null\n";
+        if (m_params.relaunchLog.empty() && m_params.relaunchArguments.empty()) {
+            file << "open " << quote(app) << "\n";
+        }
+        else {
+            file << "exec " << quote(app + "/Contents/MacOS/Engine Simulator") << relaunch << "\n";
+        }
 #else
         if (m_appImage) {
             file << "mv -f " << quote(staged) << " " << quote(m_installRoot) << "\n"
                 << "chmod +x " << quote(m_installRoot) << "\n"
-                << "exec " << quote(m_installRoot) << "\n";
+                << "exec " << quote(m_installRoot) << relaunch << "\n";
         }
         else {
             file << "cp -Rf " << quote(staged + "/.") << " " << quote(m_installRoot + "/") << "\n"
-                << "exec " << quote(m_installRoot + "/bin/engine-sim-app") << "\n";
+                << "exec " << quote(m_installRoot + "/bin/engine-sim-app") << relaunch << "\n";
         }
 #endif
     }
@@ -578,7 +697,12 @@ std::string Updater::findInstallRoot() const {
     std::error_code ec;
     if (m_params.executablePath.empty()) return "";
 
-    fs::path dir = fs::path(m_params.executablePath);
+    // SDL_GetBasePath() ends with a separator; path::filename() of such a
+    // path is empty, which made every installation look unpackaged
+    std::string base = m_params.executablePath;
+    while (base.size() > 1 && (base.back() == '/' || base.back() == '\\')) base.pop_back();
+
+    fs::path dir = fs::path(base);
     if (!fs::is_directory(dir, ec)) dir = dir.parent_path();
     dir = fs::weakly_canonical(dir, ec);
 
