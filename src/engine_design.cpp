@@ -312,6 +312,8 @@ namespace {
           << "            tire_radius: 0.31 * units.m,\n"
           << "            rolling_resistance: " << num(0.015 * d.vehicleMass * 9.81) << ",\n"
           << "            tire_friction: " << num(d.tireFriction) << ",\n"
+          // Brakes good for about 0.9 g, or what the tires can hold
+          << "            max_brake_force: " << num(0.9 * std::min(d.tireFriction, 1.1) * d.vehicleMass * 9.81) << " * units.N,\n"
           << "            driven_weight_fraction: " << num(d.drivetrain == "awd" ? 1.0 : (d.drivetrain == "fwd" ? 0.55 : 0.6)) << "\n"
           << "        );\n"
           << "}\n\n"

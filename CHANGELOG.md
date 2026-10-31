@@ -74,6 +74,19 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   engines cut over and over; it now reads a filtered pressure and ignores
   shifts), and the launch clutch bogging engines with little low-speed
   torque (it now slips to hold a launch speed, like a torque converter).
+- Air drag, rolling resistance and the brakes never acted on the car: the
+  drag constraint's force limits had the wrong sign, so the solver could
+  only push the car forward and clamped that to nothing. Cars now coast
+  down and brake (designed engines get brakes good for about 0.9 g).
+- With the brakes working, stops on the automatic exposed stalls: shifts
+  off throttle no longer cut the ignition, the clutch lets go near idle,
+  and the idle control has a dashpot and catches an engine sagging far
+  below idle.
+- Launch control below the clutch's launch speed left the car standing.
+- Windows updater: extraction picked up Git's GNU tar from the PATH, which
+  reads "C:" as a host name; Windows' own tar and curl are used by path.
+- `engine-sim-drive --brake-at <s>` lifts and brakes to a stop and reports
+  whether the engine stalled.
 
 ## [0.4.0] - 2026-10-15
 

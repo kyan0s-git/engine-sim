@@ -98,6 +98,8 @@ Ecu::Ecu() {
     m_overboostTimer = 0;
     m_boostFiltered = 0;
     m_launchClutch = 0;
+    m_dashpot = 0;
+    m_lastThrottle = 0;
     m_timeInGear = 0;
 }
 
@@ -112,6 +114,8 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     m_overboostTimer = 0;
     m_boostFiltered = 0;
     m_launchClutch = 0;
+    m_dashpot = 0;
+    m_lastThrottle = 0;
 
     Settings s;
     IgnitionModule *ignition = engine->getIgnitionModule();
@@ -189,11 +193,21 @@ double Ecu::launchClutch(double dt, double rpm, double throttle) {
     // Slips the clutch to hold the engine near a launch speed, like a torque
     // converter's stall speed (higher with more throttle): the engine stays
     // where it makes torque, whatever its size or the clutch's capacity
-    const double target = m_settings.idleRpm + m_settings.launchClutchRpm * (0.3 + 0.7 * std::clamp(throttle, 0.0, 1.0));
+    double target = m_settings.idleRpm + m_settings.launchClutchRpm * (0.3 + 0.7 * std::clamp(throttle, 0.0, 1.0));
+    if (m_state.launchActive) {
+        // Below the launch speed, or the limiter would hold the engine
+        // under the point where the clutch bites and the car never moves
+        target = std::min(target, 0.9 * m_settings.launchRpm);
+    }
     // It lets go faster than it bites, so that slowing to a stop doesn't
     // stall the engine
     const double gain = (rpm < target) ? 6.0 : 3.0;
     m_launchClutch = std::clamp(m_launchClutch + gain * (rpm - target) / target * dt, 0.0, 1.0);
+
+    // Anti-stall: near idle (braking hard to a stop) the clutch opens at
+    // once rather than at the controller's pace
+    const double idle = m_settings.idleRpm;
+    m_launchClutch = std::min(m_launchClutch, smoothstep(0.9 * idle, 1.25 * idle, rpm));
     return m_launchClutch;
 }
 
@@ -238,12 +252,17 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
             t->changeGear(m_shiftTarget);
         }
 
+        // Near idle or at a standstill the clutch comes back only as far as
+        // the engine can take without stalling
+        const double idle = m_settings.idleRpm;
+        const double allowed = (vehicleSpeed < 1.0) ? 0.0 : smoothstep(0.9 * idle, 1.25 * idle, rpm);
         if (m_shiftTimer > half) {
             t->setClutchPressure(0.0);
         }
         else {
-            t->setClutchPressure(1.0 - std::max(m_shiftTimer, 0.0) / half);
+            t->setClutchPressure((1.0 - std::max(m_shiftTimer, 0.0) / half) * allowed);
         }
+        m_launchClutch = std::min(m_launchClutch, allowed);
 
         if (m_shiftTimer <= 0) {
             m_shiftTimer = 0;
@@ -277,6 +296,8 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
     // Held on the brakes at a standstill (staging a launch): clutch out
     if (m_vehicle->getBrakeLevel() > 0 && vehicleSpeed < 1.0) {
         m_launchClutch = 0;
+    m_dashpot = 0;
+    m_lastThrottle = 0;
         t->setClutchPressure(0.0);
         return;
     }
@@ -314,8 +335,9 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
     // engine speed alone during wheelspin lands in a gear too tall to pull.
     // Downshifts follow the road speed so that the engine speed sagging
     // during a shift or recovering from wheelspin doesn't trigger one
+    const bool braking = m_vehicle->getBrakeLevel() > 0;
     if (gear < gearCount - 1 && rpm > upshiftRpm(gear) && wheelRpm > 0.85 * upshiftRpm(gear)
-        && clutch > 0.95 && m_timeInGear > 0.3)
+        && clutch > 0.95 && m_timeInGear > 0.3 && !braking)
     {
         startShift(gear + 1, "up");
         return;
@@ -385,7 +407,9 @@ void Ecu::update(double dt) {
     }
 
     ignition->setRevLimit(units::rpm(limit));
-    ignition->setLimiterDuration(s.cutTime);
+    // Launch control cuts briefly so that light engines don't swing far below
+    // the launch speed (the clutch needs a steady engine speed to bite)
+    ignition->setLimiterDuration(m_state.launchActive ? std::min(s.cutTime, 0.02) : s.cutTime);
 
     // Anti-lag
     const bool turbo = (fi != nullptr && fi->isTurbocharger());
@@ -447,12 +471,25 @@ void Ecu::update(double dt) {
         if (throttle < 0.03) {
             m_idleAir = std::clamp(m_idleAir + 1.5e-5 * error * dt, 0.0, 0.12);
         }
-        idleAir = std::clamp(m_idleAir + 5e-5 * std::max(error, 0.0), 0.0, 0.15);
+        // Dashpot: off throttle at speed the bypass holds extra air and
+        // lets it go slowly, so that the engine coming down from a run (or
+        // with the clutch let go when braking to a stop) settles at idle
+        // instead of falling through it
+        // It is set when the throttle closes (never while it is closed, or
+        // the extra air could hold the engine up) and bleeds off near idle
+        if (throttle < 0.03 && m_lastThrottle >= 0.03 && rpm > 1.5 * s.idleRpm) m_dashpot = 0.015;
+        else if (rpm < 1.3 * s.idleRpm) m_dashpot = std::max(m_dashpot - 0.0075 * dt, 0.0);
+        if (throttle >= 0.03) m_dashpot = 0;
+
+        // Well below the target the engine is about to stall: catch it hard
+        const double sag = std::max(0.85 * s.idleRpm - rpm, 0.0);
+        idleAir = std::clamp(m_idleAir + m_dashpot + 5e-5 * std::max(error, 0.0) + 2e-4 * sag, 0.0, 0.15);
     }
     else if (!ignition->m_enabled) {
         m_idleAir = std::max(m_idleAir - dt * 0.05, 0.0);
     }
     m_state.idleAir = s.idleControl ? idleAir : 0.0;
+    m_lastThrottle = throttle;
 
     double floor = m_state.idleAir;
     if (m_state.antiLagActive) floor = std::max(floor, s.antiLagAir);
@@ -465,7 +502,10 @@ void Ecu::update(double dt) {
         m_state.shifting = false;
     }
 
-    const bool cut = m_state.overboost || (m_state.shifting && m_shiftTimer > 0.5 * s.shiftTime);
+    // Shifts cut the power only under throttle: off throttle near idle the
+    // cut would stall the engine
+    const bool cut = m_state.overboost
+        || (m_state.shifting && m_shiftTimer > 0.5 * s.shiftTime && throttle > 0.2);
     ignition->setCut(cut);
     m_engine->setSpeedControlLimits(floor, m_state.shifting ? 0.0 : 1.0);
 

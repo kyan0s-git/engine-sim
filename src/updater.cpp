@@ -29,6 +29,19 @@ namespace {
         return "\"" + s + "\"";
     }
 
+    // A tool that ships with Windows, by its full path so that another
+    // program of the same name earlier on the PATH isn't picked up (Git for
+    // Windows' GNU tar reads "C:" as a remote host name)
+    std::string systemTool(const char *name) {
+        char systemDir[MAX_PATH] = {};
+        const UINT length = GetSystemDirectoryA(systemDir, MAX_PATH);
+        if (length == 0 || length >= MAX_PATH) return name;
+
+        const fs::path path = fs::path(systemDir) / (std::string(name) + ".exe");
+        std::error_code ec;
+        return fs::exists(path, ec) ? quote(path.string()) : std::string(name);
+    }
+
     // Runs a command without showing a console window and returns its exit
     // code; standard output is captured in `output`
     int runCommand(const std::string &command, std::string *output) {
@@ -79,6 +92,10 @@ namespace {
         return static_cast<int>(exitCode);
     }
 #else
+    std::string systemTool(const char *name) {
+        return name;
+    }
+
     std::string quote(const std::string &s) {
         std::string result = "'";
         for (const char c : s) {
@@ -396,7 +413,7 @@ void Updater::check() {
 
     // The HTTP status is appended on a line of its own
     const std::string command =
-        "curl -sSL --max-time 20"
+        systemTool("curl") + " -sSL --max-time 20"
         " -H " + quote("Accept: application/vnd.github+json") +
         " -H " + quote("User-Agent: engine-sim-updater") +
         // curl expands the \n itself: a real newline would end the command
@@ -458,7 +475,7 @@ void Updater::install() {
         const fs::path installer = updates / release.installerName;
         std::string output;
         const std::string download =
-            "curl -fsSL --max-time 900 -H " + quote("User-Agent: engine-sim-updater")
+            systemTool("curl") + " -fsSL --max-time 900 -H " + quote("User-Agent: engine-sim-updater")
             + " -o " + quote(installer.string()) + " " + quote(release.installerUrl);
         if (runCommand(download, &output) != 0 || fs::file_size(installer, ec) < 1024 * 1024) {
             fail("Download failed: " + output.substr(0, 200));
@@ -491,7 +508,7 @@ void Updater::install() {
 
     std::string output;
     const std::string download =
-        "curl -fsSL --max-time 900 -H " + quote("User-Agent: engine-sim-updater")
+        systemTool("curl") + " -fsSL --max-time 900 -H " + quote("User-Agent: engine-sim-updater")
         + " -o " + quote(archive.string()) + " " + quote(release.assetUrl);
     if (runCommand(download, &output) != 0) {
         fail("Download failed: " + output.substr(0, 200));
@@ -525,7 +542,7 @@ void Updater::install() {
         "ditto -x -k " + quote(archive.string()) + " " + quote(staging.string());
 #elif defined(_WIN32)
     const std::string extract =
-        "tar -xf " + quote(archive.string()) + " -C " + quote(staging.string());
+        systemTool("tar") + " -xf " + quote(archive.string()) + " -C " + quote(staging.string());
 #else
     const std::string extract =
         "tar -xzf " + quote(archive.string()) + " -C " + quote(staging.string());

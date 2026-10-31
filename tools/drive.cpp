@@ -40,6 +40,7 @@ namespace {
         double shiftRpm = 0;        // manual: 0 = ECU rev limit - 300
         double launchRpm = 0;       // launch control (0 = off)
         double duration = 25;       // [s]
+        double brakeAt = -1;        // [s] lift and brake to a stop
         double trace = 0.5;         // [s] between trace lines, 0 = none
         bool antiLag = false;
         double idle = 1.0;          // [s] of idling before the launch
@@ -143,13 +144,14 @@ int main(int argc, char *argv[]) {
         else if (arg == "--shift" && value) options.shiftRpm = std::atof(argv[++i]);
         else if (arg == "--launch" && value) options.launchRpm = std::atof(argv[++i]);
         else if (arg == "--time" && value) options.duration = std::atof(argv[++i]);
+        else if (arg == "--brake-at" && value) options.brakeAt = std::atof(argv[++i]);
         else if (arg == "--trace" && value) options.trace = std::atof(argv[++i]);
         else if (arg == "--anti-lag") options.antiLag = true;
         else if (arg == "--idle" && value) options.idle = std::atof(argv[++i]);
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--auto] [--preset economy|performance|race] [--tune <file>]\n"
-                "          [--shift <rpm>] [--launch <rpm>] [--anti-lag] [--time <s>] [--trace <s>] <script.mr>\n",
+                "          [--shift <rpm>] [--launch <rpm>] [--anti-lag] [--time <s>] [--trace <s>] [--brake-at <s>] <script.mr>\n",
                 argv[0]);
             return 0;
         }
@@ -232,7 +234,7 @@ int main(int argc, char *argv[]) {
         run(simulator, 1.0, [](double) {});
     }
 
-    std::printf("t_s,rpm,gear,speed_kmh,distance_m,boost_kPa,target_kPa,clutch,throttle,flags\n");
+    std::printf("t_s,rpm,gear,speed_kmh,distance_m,boost_kPa,target_kPa,clutch,throttle,idle_air,flags\n");
 
     double t = 0, nextTrace = 0;
     double t60 = -1, t100 = -1, tQuarter = -1, trap = 0, peakSpeed = 0;
@@ -241,9 +243,18 @@ int main(int argc, char *argv[]) {
     double clutchRamp = 0, shiftTimer = 0;
     const double startDistance = vehicle->getTravelledDistance();
 
+    double stopTime = -1;
+    bool braking = false;
     while (t < options.duration) {
         run(simulator, 1 / 60.0, [&](double dt) {
             t += dt;
+
+            if (options.brakeAt >= 0 && t >= options.brakeAt && !braking) {
+                braking = true;
+                engine->setSpeedControl(0.0);
+                vehicle->setBrakeLevel(1.0);
+            }
+            if (braking && stopTime < 0 && std::abs(vehicle->getSpeed()) < 0.1) stopTime = t;
 
             if (!options.automatic) {
                 // Manual driver: release the clutch over 0.6 s, shift at the
@@ -285,7 +296,7 @@ int main(int argc, char *argv[]) {
             nextTrace += options.trace;
             const ForcedInduction *fi = engine->getForcedInduction();
             const Ecu::State &ecuState = simulator->getEcu().state();
-            std::printf("%.2f,%.0f,%d,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f,%s%s%s%s\n",
+            std::printf("%.2f,%.0f,%d,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f,%.3f,%s%s%s%s\n",
                 t, engine->getRpm(), transmission->getGear() + 1,
                 std::abs(vehicle->getSpeed()) * 3.6,
                 vehicle->getTravelledDistance() - startDistance,
@@ -293,11 +304,12 @@ int main(int argc, char *argv[]) {
                 ecuState.boostTarget,
                 transmission->getClutchPressure(),
                 engine->getSpeedControl(),
+                ecuState.idleAir,
                 ecuState.overboost ? "O" : "", ecuState.limiting ? "L" : "",
                 ecuState.shifting ? "S" : "", ecuState.launchActive ? "C" : "");
         }
 
-        if (tQuarter > 0 && t > tQuarter + 0.5) break;
+        if (options.brakeAt < 0 && tQuarter > 0 && t > tQuarter + 0.5) break;
     }
 
     auto result = [](double v) { return v < 0 ? std::string("-") : std::to_string(v).substr(0, 5) + " s"; };
@@ -305,6 +317,13 @@ int main(int argc, char *argv[]) {
         "0-60 mph %s, 0-100 km/h %s, quarter mile %s at %.0f km/h, top speed reached %.0f km/h, %d gear changes, %d overboost cuts\n",
         result(t60).c_str(), result(t100).c_str(), result(tQuarter).c_str(),
         trap * 3.6, peakSpeed * 3.6, shifts, overboostCuts);
+
+    if (options.brakeAt >= 0) {
+        std::fprintf(stderr, "braking from %.0f s: %s, engine %s at %.0f rpm, gear %d\n",
+            options.brakeAt,
+            stopTime < 0 ? "still moving" : ("stopped after " + std::to_string(stopTime - options.brakeAt).substr(0, 4) + " s").c_str(),
+            engine->getRpm() > 300 ? "running" : "STALLED", engine->getRpm(), transmission->getGear() + 1);
+    }
 
     simulator->endAudioRenderingThread();
     simulator->releaseSimulation();

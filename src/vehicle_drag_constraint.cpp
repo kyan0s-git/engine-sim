@@ -61,12 +61,17 @@ void VehicleDragConstraint::calculate(Output *output, atg_scs::SystemState *syst
         + 0.5 * airDensity * v_squared * c_d * A
         + m_vehicle->getBrakeForce());
 
+    // The Jacobian is -1, so the constraint force on the body is -lambda: a
+    // force that slows the body down needs lambda of the same sign as its
+    // speed. (With the opposite limits the solver could only push the
+    // vehicle forward, which it clamped to nothing, so drag, rolling
+    // resistance and the brakes had no effect.)
     if (m_bodies[0]->v_theta >= 0) {
-        output->limits[0][0] = -resistance;
-        output->limits[0][1] = 0;
-    }
-    else {
         output->limits[0][0] = 0;
         output->limits[0][1] = resistance;
+    }
+    else {
+        output->limits[0][0] = -resistance;
+        output->limits[0][1] = 0;
     }
 }

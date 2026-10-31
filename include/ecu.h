@@ -153,6 +153,8 @@ class Ecu {
         double m_overboostTimer;
         double m_boostFiltered = 0;     // [kPa]
         double m_launchClutch = 0;
+        double m_dashpot = 0;           // extra idle air off throttle
+        double m_lastThrottle = 0;
 };
 
 #endif /* ATG_ENGINE_SIM_ECU_H */
