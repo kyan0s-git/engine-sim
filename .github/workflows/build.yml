@@ -28,7 +28,7 @@ jobs:
             cc: clang
             cxx: clang++
           - name: macOS (Apple Silicon)
-            os: macos-14
+            os: macos-15
           - name: Windows (MSVC)
             os: windows-2022
 

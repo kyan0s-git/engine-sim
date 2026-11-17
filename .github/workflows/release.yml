@@ -37,7 +37,7 @@ jobs:
             # Build on the oldest supported runner for broad glibc compatibility
             os: ubuntu-22.04
           - name: macos-universal
-            os: macos-14
+            os: macos-15
 
     steps:
       - uses: actions/checkout@v5
