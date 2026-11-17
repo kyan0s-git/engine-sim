@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(engine-sim
-    VERSION 0.5.0
+    VERSION 0.6.0
     DESCRIPTION "Real-time internal combustion engine simulator"
     LANGUAGES C CXX)
 

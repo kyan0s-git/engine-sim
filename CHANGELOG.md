@@ -4,6 +4,74 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
+## [0.6.0] - 2026-11-17
+
+### Crashes and freezes
+- Random crashes that grew more likely the longer the app ran: the
+  graphics library's error tracking kept one call stack for the whole
+  program, and the simulation thread (writing the audio) and the main
+  thread (rendering) both pushed and popped it. Lost updates let its
+  level run outside the array. Found with ThreadSanitizer; the stacks are
+  now per thread and bounds checked.
+- A freeze and memory corruption: the crankshaft's cycle angle could come
+  out exactly equal to the cycle length, which the simulator used as an
+  index one past the end of an array and then looped forever.
+- Designs whose physics blow up (found by running hundreds of random
+  designs) sent NaN to the ECU, whose map lookup then read outside its
+  table. Lookups are NaN-safe; the simulator stops at the first
+  non-finite engine speed and the app restarts the engine with a message
+  (with the ignition off if it keeps happening).
+- More lookups guarded the same way (Wankel rotor faces, filters).
+
+### Accelerator pedal
+- The pedal was far too sensitive: on the LS3 at 3000 rpm 10 % pedal gave
+  80 % of the torque and 20 % gave 94 %. The ECU now works like a modern
+  drive-by-wire car: the pedal asks for a share of the torque (10 % pedal
+  is about 5 %, half pedal about 40 %) and the ECU opens the throttle as
+  far as that takes at the current engine speed, learning how the engine
+  breathes as it runs (against the charge pressure on boosted engines).
+- Pedal response in Settings > Driving: progressive (default), gentle,
+  linear, sport, or direct (the old behaviour). The map can be edited in
+  the ECU window's new Pedal tab and is saved with tunes.
+- Q, W, E, R are now 10, 25, 50 and 100 % pedal.
+
+### Sound
+- Every exhaust was low-passed at 1.9 kHz whatever the simulation rate,
+  which removed the rasp and crackle of a real exhaust; it is now limited
+  only by the simulation rate (up to 7 kHz).
+- The output leveler jumped to each new peak within one sample (an
+  audible step) and recovered in 0.4 s, which pulled idle, part throttle
+  and full throttle to the same loudness. It is replaced by a look-ahead
+  stage that keeps the loudness differences (idle about 10 dB below full
+  throttle) and a soft clipper instead of a hard limit.
+- New layers, after how Gran Turismo, Forza and Assetto Corsa build car
+  sound from separate sources: induction roar that follows the throttle
+  opening, valvetrain ticks, exhaust rasp that grows with load, and pops
+  and crackles on the overrun (adjustable, off to aggressive).
+- Listening position: outside behind the car, the driver's seat (the
+  exhaust muffled and booming through the cabin, the intake and engine
+  through the firewall) or the engine bay. K cycles through them.
+- Turbocharger whistle: it reached only a sixth of its level on full
+  boost and was masked by the exhaust; it now rises clearly with the
+  shaft speed.
+- `engine-sim-drive --wav <file>` renders the sound offline; `--rev`
+  free-revs the engine; `--perspective` and `--crackle` set the sound.
+
+### Fixes
+- After revving in neutral the engine hung at about 4000 rpm instead of
+  returning to idle (the idle "dashpot" added in 0.5.0 held itself up).
+- Roots superchargers from the designer made about 50 % more boost than
+  the target.
+- The F1 preset's idle opening was so wide that the throttle hardly
+  closed; it now engine-brakes.
+- Rows in the designer's forced induction tab overlapped and hid
+  controls.
+
+### Tools
+- `engine-sim-script-check --random-designs <count> <dir>` builds and
+  runs random designs across the designer's ranges (a stress test);
+  `--regenerate` rebuilds designed engines from their design lines.
+
 ## [0.5.0] - 2026-10-30
 
 ### Beginner and Advanced modes

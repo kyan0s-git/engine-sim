@@ -46,7 +46,7 @@ The **toolbar** starts and stops the engine with one click (the starter is held 
 - **ECU tuning**: the ignition, fuel (lambda) and boost maps over engine speed and manifold pressure with the live operating point, rev limiter (hard or soft), launch control, overboost cut, idle speed control, anti-lag and the automatic gearbox's shift maps (full-throttle shifts can be optimized from the dyno curve). Economy, Performance and Race tunes are one click away; tunes are saved per engine (`tunes/` in the user data folder) and load with it.
 - **Launch test**: 0-60 mph, 0-100 km/h, 0-200 km/h and quarter mile times from a standing start, automatic or manual, with or without launch control. Acceleration is limited by tire grip on the driven wheels; the drivetrain and tires are set in the designer.
 - **Tuning** (*Simulation* > *Tuning*): change the ignition timing, rev limiter, mixture, combustion efficiency, wall temperature, heat transfer, friction, boost (wastegate), supercharger drive ratio, intercooler, blow-off valve, sound and simulation frequency of the running engine.
-- **Settings** (*File* > *Settings*, Ctrl+, or Cmd+, on macOS): fullscreen, vertical sync, interface scale and theme, engine view style (realistic shaded metal or the classic flat theme colors), units, master volume, muting in the background, simulation frequency and update checks.
+- **Settings** (*File* > *Settings*, Ctrl+, or Cmd+, on macOS): fullscreen, vertical sync, interface scale and theme, engine view style (realistic shaded metal or the classic flat theme colors), units, master volume, muting in the background, the engine sound (listening position, intake, valvetrain, overrun pops and crackles), pedal response, simulation frequency and update checks.
 - **Console** (F5): script errors and messages.
 
 ![ECU tuning](docs/public/screenshots/ecu_v05.png?raw=true)
@@ -58,6 +58,12 @@ The **toolbar** starts and stops the engine with one click (the starter is held 
 Panels can be resized by dragging their inner edges, and Tab cycles between the full layout, the engine with its instruments, and the engine alone.
 
 The simulation runs on its own thread, so the frame rate of the interface doesn't drop when the physics gets expensive; the Performance tab shows where the time of each frame goes.
+
+## Throttle pedal and sound
+
+The pedal works like drive-by-wire in a modern car: it asks for a share of the engine's torque (progressively: 10 % pedal is about 5 % of the torque, half pedal about 40 %) and the ECU opens the throttle as far as that takes at the current engine speed. *Settings* > *Driving* offers gentle, progressive, linear and sport maps, or *direct*, where the pedal moves the throttle plate itself (most of the torque then comes in the first fifth of the pedal's travel, as in the original simulator). The map can be edited in the ECU window's *Pedal* tab.
+
+The sound starts from the simulated exhaust pressure pulses, shaped by the exhaust's impulse response. Like the recording-based sound of racing games, it is built from separate layers: the exhaust, the induction roar (which follows the throttle opening), the valvetrain, the exhaust's flow noise under load, pops and crackles on the overrun, and the turbocharger or supercharger. You can listen from behind the car, from the driver's seat (the exhaust muffled and booming, the intake and engine coming through the firewall) or from the engine bay; **K** cycles through them. `engine-sim-drive --rev --wav sound.wav engine.mr` renders an engine's sound to a file without the interface.
 
 ## Turbochargers and superchargers
 
