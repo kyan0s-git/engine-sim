@@ -32,6 +32,7 @@ void GaussianFilter::initialize(double alpha, double radius, int cacheSteps) {
 double GaussianFilter::evaluate(double s) const {
     const int actualSteps = m_cacheSteps - 32;
     const double s_sample = actualSteps * std::abs(s) * m_inv_r;
+    if (!(s_sample < m_cacheSteps - 1)) return 0.0;    // beyond the radius, or NaN
     const double s0 = std::floor(s_sample);
     const double s1 = std::ceil(s_sample);
     const double d = s_sample - s0;

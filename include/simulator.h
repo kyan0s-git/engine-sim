@@ -77,6 +77,11 @@ public:
     void limitFrameSteps(int maxSteps) { m_steps = (std::min)(m_steps, (std::max)(maxSteps, 1)); }
     double getSimulationSpeed() const { return m_simulationSpeed; }
     int getCurrentIteration() const { return m_currentIteration; }
+
+    // The physics blew up (a non-finite or absurd engine speed, usually an
+    // extreme design or too low a simulation frequency): stepping stops
+    // until the engine is loaded again
+    bool hasDiverged() const { return m_diverged; }
     double getAverageProcessingTime() const { return m_physicsProcessingTime; }
 
     int simulationSteps() const { return m_steps; }
@@ -113,6 +118,7 @@ private:
     std::chrono::steady_clock::time_point m_simulationStart;
     std::chrono::steady_clock::time_point m_simulationEnd;
     int m_currentIteration;
+    bool m_diverged = false;
 
     Engine *m_engine;
     Transmission *m_transmission;

@@ -151,7 +151,8 @@ int WankelRotor::getFaceAtAngle(double housingAngle, double shaftAngle) const {
     const double d = positiveMod(
         (housingAngle + constants::pi / 2) - getPhase(shaftAngle),
         2 * constants::pi);
-    return std::min(static_cast<int>(d / FaceAngle), FaceCount - 1);
+    if (!std::isfinite(d)) return 0;
+    return std::clamp(static_cast<int>(d / FaceAngle), 0, FaceCount - 1);
 }
 
 double WankelRotor::getEffectiveInertia() const {

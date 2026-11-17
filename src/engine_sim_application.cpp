@@ -682,6 +682,25 @@ void EngineSimApplication::run() {
             reloadScripts();
         }
 
+        // A blown-up simulation is restarted; if it blows up again soon
+        // the engine is left switched off, with an explanation
+        if (m_simulator != nullptr && m_simulator->hasDiverged()) {
+            const Clock::time_point now = Clock::now();
+            const bool repeated = m_divergedBefore && seconds(m_lastDivergence, now) < 20.0;
+            m_divergedBefore = true;
+            m_lastDivergence = now;
+            reloadScripts();
+            if (repeated && m_iceEngine != nullptr) {
+                m_iceEngine->getIgnitionModule()->m_enabled = false;
+                m_ui.log("The simulation keeps becoming unstable with this engine. It was restarted with "
+                    "the ignition off; try a higher simulation frequency (Settings > Simulation) or "
+                    "less extreme design values.");
+            }
+            else {
+                m_ui.log("The simulation became unstable and was restarted.");
+            }
+        }
+
         if (!controls.loadScript.empty()) {
             const std::string script = controls.loadScript;
             controls.loadScript.clear();

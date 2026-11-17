@@ -258,6 +258,11 @@ class EngineSimApplication {
         std::thread m_simulationThread;
         std::atomic<bool> m_simulationRunning{ false };
         std::atomic<bool> m_mainThreadWaiting{ false };
+
+        // Restarting a simulation that blew up
+        bool m_divergedBefore = false;
+        std::chrono::steady_clock::time_point m_lastDivergence;
+
         bool m_stepRequested = false;
         double m_timePerStepEstimate = 0;   // [s]
         double m_requestedSimulationSpeed = 1.0;

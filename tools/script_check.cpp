@@ -22,6 +22,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <filesystem>
+#include <random>
 #include <initializer_list>
 #include <sstream>
 #include <string>
@@ -38,6 +39,8 @@ namespace {
         bool trace = false;
         double crankSeconds = 1.5;
         std::vector<std::string> scripts;
+        unsigned seed = 1;                  // --random-designs (give --seed first)
+        bool regenerate = false;            // rebuild designed engines from their @design lines
     };
 
     bool isOneOf(const std::string &value, std::initializer_list<const char *> options) {
@@ -171,7 +174,7 @@ namespace {
             simulator->readAudioOutput(static_cast<int>(44100 * frameDt), audio.data());
 
             const double rpm = engine->getRpm();
-            if (!std::isfinite(rpm)) {
+            if (!std::isfinite(rpm) || simulator->hasDiverged()) {
                 finite = false;
                 break;
             }
@@ -228,6 +231,71 @@ namespace {
         return success;
     }
 
+    // A design with every parameter drawn from the ranges the designer's
+    // controls allow
+    EngineDesign randomDesign(std::mt19937 &rng, int index) {
+        auto uniform = [&](double a, double b) { return std::uniform_real_distribution<double>(a, b)(rng); };
+        auto pick = [&](int n) { return std::uniform_int_distribution<int>(0, n - 1)(rng); };
+        constexpr double Deg = 3.14159265358979323846 / 180.0;
+
+        EngineDesign d;
+        d.name = "Random " + std::to_string(index);
+        d.layout = static_cast<EngineDesign::Layout>(pick(5));
+        const int cylinderChoices[] = { 1, 2, 3, 4, 5, 6, 8, 10, 12, 16 };
+        d.cylinders = cylinderChoices[pick(10)];
+        d.bankAngle = uniform(15, 180) * Deg;
+        d.wBanks = 3 + pick(2);
+        d.vrAngle = uniform(10, 20) * Deg;
+        d.bore = uniform(0.05, 0.12);
+        d.stroke = uniform(0.04, 0.12);
+        d.rodLength = d.stroke * uniform(1.4, 2.2);
+        d.compressionRatio = uniform(6, 16);
+        d.rotors = 1 + pick(4);
+        d.valvesPerCylinder = 2 + pick(4);
+        const char *valvetrains[] = { "dohc_bucket", "sohc_finger", "sohc_rocker", "pushrod", "pushrod_roller", "dohc_bucket_roller" };
+        d.valvetrain = valvetrains[pick(6)];
+        d.intakeDuration = uniform(180, 320) * Deg;
+        d.exhaustDuration = uniform(180, 320) * Deg;
+        d.intakeLift = uniform(0.005, 0.016);
+        d.exhaustLift = uniform(0.005, 0.016);
+        d.intakeLobeCenter = uniform(95, 125) * Deg;
+        d.exhaustLobeCenter = uniform(95, 125) * Deg;
+        d.runnerLength = uniform(0.05, 0.6);
+        d.primaryLength = uniform(0.1, 1.5);
+        d.exhaustLength = uniform(0.5, 5.0);
+        d.exhaustDiameter = uniform(0.03, 0.1);
+        const auto &sounds = EngineDesign::exhaustSounds();
+        d.exhaustSound = sounds[pick(static_cast<int>(sounds.size()))].first;
+        d.induction = static_cast<EngineDesign::Induction>(pick(7));
+        d.boost = uniform(0.2e5, 3.5e5);
+        d.turbineAr = uniform(0.35, 1.4);
+        d.compressorScale = uniform(0.5, 2.0);
+        d.ballBearings = pick(2) == 0;
+        d.blowoffValve = pick(3) != 0;
+        const char *blowoffs[] = { "atmospheric", "recirculating", "none" };
+        d.blowoffType = blowoffs[pick(3)];
+        d.boostControl = pick(2) ? "spring" : "electronic";
+        d.externalWastegate = pick(2) == 0;
+        d.twinScroll = pick(2) == 0;
+        d.whistlePitch = uniform(0.5, 2.0);
+        d.intercoolerEffectiveness = uniform(0, 0.95);
+        d.driveRatio = pick(2) ? 0.0 : uniform(0.8, 4.0);
+        d.idleAdvance = uniform(0, 30) * Deg;
+        d.maxAdvance = d.idleAdvance + uniform(0, 30) * Deg;
+        d.maxAdvanceRpm = uniform(1500, 12000);
+        d.redline = uniform(2000, 18000);
+        d.engineering = pick(4) != 0;
+        const char *fuels[] = { "gasoline", "e85", "ethanol", "methanol", "iso-octane", "propane", "methane", "hydrogen" };
+        d.fuel = fuels[pick(8)];
+        d.lambda = uniform(0.7, 1.4);
+        d.vehicleMass = uniform(300, 5000);
+        const char *drives[] = { "rwd", "fwd", "awd" };
+        d.drivetrain = drives[pick(3)];
+        d.tireFriction = uniform(0.9, 1.6);
+        d.validate();
+        return d;
+    }
+
 } /* namespace */
 
 int main(int argc, char *argv[]) {
@@ -252,10 +320,28 @@ int main(int argc, char *argv[]) {
                 options.scripts.push_back(path.string());
             }
         }
+        else if (arg == "--random-designs" && i + 2 < argc) {
+            // Random designs across the designer's ranges (a stress test)
+            const int count = std::atoi(argv[++i]);
+            const fs::path directory = argv[++i];
+            std::error_code ec;
+            fs::create_directories(directory, ec);
+            std::mt19937 rng(options.seed);
+            for (int k = 0; k < count; ++k) {
+                const EngineDesign design = randomDesign(rng, k);
+                const fs::path path = directory / ("random_" + std::to_string(k) + ".mr");
+                std::ofstream(path) << generateEngineScript(design);
+                options.scripts.push_back(path.string());
+            }
+        }
+        else if (arg == "--regenerate") options.regenerate = true;
+        else if (arg == "--seed" && i + 1 < argc) options.seed = static_cast<unsigned>(std::atoi(argv[++i]));
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--seconds <s>] [--require-running] [--crank <s>] [--trace]\n"
-                "          [--presets <output dir>] <script.mr>...\n",
+                "          [--presets <output dir>] [--seed <n>] [--random-designs <count> <output dir>]\n"
+                "          [--regenerate]\n"
+                "          <script.mr>...\n",
                 argv[0]);
             return 0;
         }
@@ -265,6 +351,20 @@ int main(int argc, char *argv[]) {
     if (options.scripts.empty()) {
         std::fprintf(stderr, "No scripts given\n");
         return 2;
+    }
+
+    if (options.regenerate) {
+        // Designed engines are rebuilt from their design (to try edits of
+        // the @design lines)
+        for (const std::string &script : options.scripts) {
+            std::stringstream text;
+            text << std::ifstream(script).rdbuf();
+            EngineDesign design;
+            if (readEngineDesign(text.str(), &design)) {
+                design.validate();
+                std::ofstream(script) << generateEngineScript(design);
+            }
+        }
     }
 
     int failures = 0;

@@ -2,6 +2,8 @@
 
 #include "../include/ecu.h"
 
+#include <limits>
+
 TEST(EcuTableTests, BilinearSamplingAndClamping) {
     EcuTable t;
     t.resize({ 0, 1000, 2000 }, { 50, 100 }, 0.0);
@@ -13,6 +15,20 @@ TEST(EcuTableTests, BilinearSamplingAndClamping) {
     EXPECT_DOUBLE_EQ(t.sample(-100, 50), 10.0);       // clamped
     EXPECT_DOUBLE_EQ(t.sample(5000, 200), 20.0);
     EXPECT_DOUBLE_EQ(EcuTable::position(t.x, 1500), 1.5);
+}
+
+TEST(EcuTableTests, NonFiniteInputsStayInside) {
+    // A diverged simulation fed NaN into a lookup, which read outside the
+    // table and crashed
+    EcuTable t;
+    t.resize({ 0, 1000, 2000 }, { 50, 100 }, 7.0);
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    EXPECT_DOUBLE_EQ(t.sample(nan, nan), 7.0);
+    EXPECT_DOUBLE_EQ(t.sample(1.3e290, nan), 7.0);
+    EXPECT_DOUBLE_EQ(t.sample(-inf, inf), 7.0);
+    EXPECT_DOUBLE_EQ(EcuTable::position(t.x, nan), 0.0);
+    EXPECT_DOUBLE_EQ(EcuTable::position(t.x, inf), 2.0);
 }
 
 TEST(EcuTableTests, OneDimensional) {

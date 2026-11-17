@@ -58,6 +58,9 @@ void EcuTable::resize(const std::vector<double> &xAxis, const std::vector<double
 double EcuTable::position(const std::vector<double> &axis, double value) {
     const int n = static_cast<int>(axis.size());
     if (n <= 1) return 0;
+    // A NaN would fail every comparison and come out as a garbage index (a
+    // diverged simulation fed one in and the lookup read outside the table)
+    if (!std::isfinite(value)) return (value > 0) ? n - 1 : 0;
     if (value <= axis.front()) return 0;
     if (value >= axis.back()) return n - 1;
 
@@ -69,6 +72,7 @@ double EcuTable::position(const std::vector<double> &axis, double value) {
 
 double EcuTable::sample(double xq, double yq) const {
     if (v.empty() || x.empty()) return 0;
+    if (v.size() < static_cast<size_t>(cols()) * rows()) return v.front();
 
     const double fx = position(x, xq);
     const int c0 = std::min(static_cast<int>(fx), cols() - 1);

@@ -1,6 +1,7 @@
 #include "../include/simulator.h"
 
 #include <algorithm>
+#include <cmath>
 
 Simulator::Simulator() {
     m_engine = nullptr;
@@ -129,6 +130,8 @@ void Simulator::startFrame(double dt) {
 }
 
 bool Simulator::simulateStep() {
+    if (m_diverged) return false;
+
     if (getCurrentIteration() >= simulationSteps()) {
         auto s1 = std::chrono::steady_clock::now();
 
@@ -141,6 +144,15 @@ bool Simulator::simulateStep() {
 
     const double timestep = getTimestep();
     m_system->process(timestep, 1);
+
+    // Stop at the first sign of a blow-up rather than feeding NaN to the
+    // ECU, the sound and the engine view (a NaN index crashed the ECU's map
+    // lookup)
+    const double speed = m_engine->getOutputCrankshaft()->m_body.v_theta;
+    if (!std::isfinite(speed) || std::abs(speed) > 1.0e5) {
+        m_diverged = true;
+        return false;
+    }
 
     m_ecu.update(timestep);
     m_engine->update(timestep);
@@ -159,8 +171,13 @@ bool Simulator::simulateStep() {
         shaft->m_body.theta = outputShaft->m_body.theta;
     }
 
-    const int index =
-        static_cast<int>(std::floor(DynoTorqueSamples * outputShaft->getCycleAngle() / outputShaft->getCycleLength()));
+    // Kept inside the array: an index of DynoTorqueSamples (a cycle angle
+    // equal to the cycle length) wrote past its end and then made the loop
+    // below spin forever, as it never reaches an index outside the array
+    const double cyclePosition = outputShaft->getCycleAngle() / outputShaft->getCycleLength();
+    const int index = std::isfinite(cyclePosition)
+        ? std::clamp(static_cast<int>(std::floor(DynoTorqueSamples * cyclePosition)), 0, DynoTorqueSamples - 1)
+        : 0;
     const int step = m_engine->isSpinningCw() ? 1 : -1;
     m_dynoTorqueSamples[index] = m_dyno.getTorque();
 

@@ -72,7 +72,12 @@ double Crankshaft::getAngle() const {
 
 double Crankshaft::getCycleAngle(double offset) {
     const double wrapped = std::fmod(-getAngle() + offset, m_cycleLength);
-    return (wrapped < 0)
+    const double angle = (wrapped < 0)
         ? wrapped + m_cycleLength
         : wrapped;
+
+    // A tiny negative remainder plus the cycle length rounds to the cycle
+    // length itself; callers use the result as [0, length) (one turned it
+    // into an index one past the end of an array)
+    return (angle >= m_cycleLength || !(angle >= 0)) ? 0.0 : angle;
 }
