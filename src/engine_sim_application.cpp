@@ -744,6 +744,15 @@ void EngineSimApplication::run() {
             m_ui.savePreferences();
         }
 
+        // Listening position: outside, driver's seat, engine bay
+        if (m_engine.ProcessKeyDown(ysKey::Code::K) && !m_ui.wantsKeyboard()) {
+            UserPreferences &preferences = m_ui.preferences();
+            preferences.listenerPosition = (preferences.listenerPosition + 1) % 3;
+            const char *names[] = { "outside", "in the driver's seat", "by the engine" };
+            m_ui.log(std::string("Listening ") + names[preferences.listenerPosition]);
+            m_ui.savePreferences();
+        }
+
         // Mute while in the background (if enabled in the settings)
         {
             const UserPreferences &preferences = m_ui.preferences();
@@ -752,6 +761,22 @@ void EngineSimApplication::run() {
             if (m_audioSource != nullptr && volume != m_appliedVolume) {
                 m_audioSource->SetVolume(volume);
                 m_appliedVolume = volume;
+            }
+
+            // Sound settings that apply to every engine
+            if (m_simulator != nullptr) {
+                Synthesizer::AudioParameters audio = m_simulator->synthesizer().getAudioParameters();
+                if (audio.perspective != preferences.listenerPosition
+                    || audio.intakeVolume != preferences.intakeVolume
+                    || audio.mechanicalVolume != preferences.mechanicalVolume
+                    || audio.overrunCrackle != preferences.overrunCrackle)
+                {
+                    audio.perspective = preferences.listenerPosition;
+                    audio.intakeVolume = preferences.intakeVolume;
+                    audio.mechanicalVolume = preferences.mechanicalVolume;
+                    audio.overrunCrackle = preferences.overrunCrackle;
+                    m_simulator->synthesizer().setAudioParameters(audio);
+                }
             }
         }
 
@@ -1734,13 +1759,13 @@ void EngineSimApplication::processEngineInput() {
     AppUi::Controls &controls = m_ui.controls();
     m_targetSpeedSetting = controls.throttle;
     if (m_engine.IsKeyDown(ysKey::Code::Q)) {
-        m_targetSpeedSetting = 0.01;
-    }
-    else if (m_engine.IsKeyDown(ysKey::Code::W)) {
         m_targetSpeedSetting = 0.1;
     }
+    else if (m_engine.IsKeyDown(ysKey::Code::W)) {
+        m_targetSpeedSetting = 0.25;
+    }
     else if (m_engine.IsKeyDown(ysKey::Code::E)) {
-        m_targetSpeedSetting = 0.2;
+        m_targetSpeedSetting = 0.5;
     }
     else if (m_engine.IsKeyDown(ysKey::Code::R)) {
         m_targetSpeedSetting = 1.0;

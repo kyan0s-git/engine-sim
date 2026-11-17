@@ -27,13 +27,29 @@ class Synthesizer {
             float inputSampleNoiseFrequencyCutoff = 10000.0f;
             float airNoise = 1.0f;
             float airNoiseFrequencyCutoff = 2000.0f;
-            float levelerTarget = 30000.0f;
+            float levelerTarget = 27000.0f;
             float levelerMaxGain = 1.9f;
             float levelerMinGain = 0.00001f;
 
             // Turbocharger/supercharger whine and blow-off noise
             float forcedInductionVolume = 1.0f;
+
+            // Engine layers besides the exhaust: induction roar (follows
+            // the throttle opening), valvetrain clatter, and pops and
+            // crackles from the exhaust on the overrun [0, 1]
+            float intakeVolume = 1.0f;
+            float mechanicalVolume = 1.0f;
+            float overrunCrackle = 0.35f;
+
+            // Where the listener is: 0 outside behind the car, 1 in the
+            // cockpit, 2 by the engine
+            int perspective = 0;
         };
+
+        // Control channels after the exhaust channels
+        static constexpr int ForcedInductionChannels = 7;
+        static constexpr int EngineChannels = 4;
+        static constexpr int AuxChannels = ForcedInductionChannels + EngineChannels;
 
         struct Parameters {
             int inputChannelCount = 1;
@@ -144,6 +160,15 @@ class Synthesizer {
         }
 
         void renderBlock(int n, const AudioParameters &parameters);
+        void renderEngineLayers(int n, const AudioParameters &parameters);
+        float overrunPop(float overrun, float amount);
+        void updateBandwidth();
+
+        struct OnePole {
+            float a = 1, z = 0;
+            void set(float fc, float fs);
+            float process(float x) { z += a * (x - z); return z; }
+        };
 
         uint32_t m_noiseState;
 
@@ -163,12 +188,37 @@ class Synthesizer {
         float m_mixEnvelope;
         Bandpass m_whistleBand, m_whooshBand, m_flutterBand;
         Bandpass m_blowoffBand1, m_blowoffBand2, m_wastegateBand;
-        const float *m_auxPointers[7] = {};
+        const float *m_auxPointers[AuxChannels] = {};
+
+        // Engine layers and listener perspective
+        Bandpass m_intakeBox, m_intakeSnorkel, m_intakeRoar, m_valveBand, m_cabinBoom, m_raspBand;
+        OnePole m_intakeDc, m_cabinLow1, m_cabinLow2, m_layerLow1, m_layerLow2, m_bayLow;
+        float m_intakePeak = 1e-6f;
+        double m_valvePhase = 0;
+        float m_valveEnvelope = 0, m_valveAmplitude = 0;
+        int m_perspective = -1;
+
+        // Overrun pops: a decaying burst injected ahead of the exhaust's
+        // impulse response, so the exhaust colours it
+        float m_popEnvelope = 0, m_popAmplitude = 0, m_popDecay = 0;
+        std::vector<float> m_inputPeak;
+
+        // Output: a slow, look-ahead loudness stage and a soft clipper
+        std::vector<float> m_lookahead;
+        int m_lookaheadIndex = 0;
+        float m_outputPeak = 1.0f;
+        float m_outputReference = 1.0f;
+        float m_outputGain = 1.0f;
+        float m_peakRelease = 0, m_referenceAttack = 0, m_referenceRelease = 0;
+        float m_gainAttack = 0, m_gainSmoothing = 0;
 
         // Scratch buffers used while rendering a block of audio
         std::vector<float> m_channelInput;
         std::vector<float> m_channelOutput;
         std::vector<float> m_mixBuffer;
+        std::vector<float> m_layerBuffer;      // intake, valvetrain and forced induction
+        std::vector<float> m_envelope;         // loudness of the exhaust, per sample
+        std::vector<float> m_popBuffer;
         std::vector<int16_t> m_renderedAudio;
 };
 

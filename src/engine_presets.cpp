@@ -150,7 +150,7 @@ namespace {
             d.valvesPerCylinder = 4;
             cams(d, 290, 285, 15.0, 13.5, 104, 108);
             timing(d, 20, 38, 8000);
-            d.idleThrottle = 0.97;
+            d.idleThrottle = 0.988;
             d.redline = 15000;
             d.induction = EngineDesign::Induction::Turbo;
             // The 2026 fuel energy flow limit holds the engine to about

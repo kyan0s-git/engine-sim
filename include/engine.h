@@ -85,6 +85,12 @@ class Engine : public Part {
         // Limits applied to the speed control by the ECU (idle air, anti-lag,
         // throttle cut while shifting)
         void setSpeedControlLimits(double floor, double ceiling) { m_speedControlFloor = floor; m_speedControlCeiling = ceiling; }
+
+        // The throttle the ECU sets in place of the pedal (drive by wire);
+        // negative: the pedal drives the throttle directly
+        void setSpeedControlOverride(double s) { m_speedControlOverride = s; }
+        double getSpeedControlOverride() const { return m_speedControlOverride; }
+        Throttle *getThrottleLinkage() const { return m_throttle; }
         virtual double getSpeedControl();
         virtual void setThrottle(double throttle);
         virtual double getThrottle() const;
@@ -249,6 +255,7 @@ class Engine : public Part {
         Throttle *m_throttle;
         double m_speedControlFloor = 0.0;
         double m_speedControlCeiling = 1.0;
+        double m_speedControlOverride = -1.0;
         ForcedInduction *m_forcedInduction;
 
         double m_throttleValue;

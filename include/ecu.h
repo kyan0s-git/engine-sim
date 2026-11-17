@@ -74,6 +74,13 @@ class Ecu {
             double antiLagAir = 0.12;       // throttle opening
             double antiLagMinRpm = 2500;
 
+            // Drive by wire: the pedal asks for a share of the available
+            // manifold pressure (about the same share of the torque) and
+            // the ECU opens the throttle as far as that takes. Off: the
+            // pedal moves the throttle plate directly.
+            bool pedalControl = true;
+            EcuTable pedal;                 // torque [%] over pedal [%]
+
             // Automatic gearbox
             bool automatic = false;
             EcuTable upshift;               // rpm over throttle [%]
@@ -91,6 +98,9 @@ class Ecu {
             double lambda = 1;
             double boostTarget = 0;         // [kPa gauge]
             double idleAir = 0;
+            double pedal = 0;               // [0, 1]
+            double throttleCommand = -1;    // speed control set by the ECU, -1 = the pedal's
+            double loadTarget = 0;          // manifold / upstream pressure the pedal asks for
             bool limiting = false;
             bool softLimiting = false;
             bool launchActive = false;
@@ -131,9 +141,13 @@ class Ecu {
         // Ready-made adjustments of the stock tune
         void applyPreset(const std::string &name);
 
+        // Pedal maps: "gentle", "progressive" (stock), "linear", "sport"
+        static void setPedalCurve(EcuTable *table, const std::string &name);
+
     protected:
         void updateGearbox(double dt, double rpm, double throttle, double vehicleSpeed);
         double launchClutch(double dt, double rpm, double throttle);
+        void updatePedal(double dt, double rpm, double pedal);
 
         Engine *m_engine;
         Transmission *m_transmission;
@@ -155,6 +169,10 @@ class Ecu {
         double m_launchClutch = 0;
         double m_dashpot = 0;           // extra idle air off throttle
         double m_lastThrottle = 0;
+        double m_pedalGain = 0;         // learned throttle flow per rpm (log)
+        bool m_pedalLearned = false;
+        double m_closedLoad = 0;        // manifold pressure share with the pedal up
+        double m_loadFiltered = 0;
 };
 
 #endif /* ATG_ENGINE_SIM_ECU_H */

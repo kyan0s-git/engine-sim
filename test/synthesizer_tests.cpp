@@ -103,10 +103,12 @@ TEST(SynthesizerTests, ProducesBoundedAudio) {
 
     EXPECT_GT(nonZero, (int)output.size() / 2);
 
-    // The leveler limits the peaks to its target so nothing clips
+    // The output stage holds the peaks near its target (a sudden onset may
+    // overshoot a little into the soft clipper) and nothing clips
     int peak = 0;
     for (const int16_t sample : output) peak = std::max(peak, std::abs((int)sample));
-    EXPECT_LE(peak, (int)Synthesizer::AudioParameters().levelerTarget + 1);
+    EXPECT_LE(peak, (int)(1.1f * Synthesizer::AudioParameters().levelerTarget));
+    EXPECT_LT(peak, 32767);
 
     synth.destroy();
 }

@@ -128,6 +128,7 @@ class AppUi {
         void autoStart(double dt);
         std::string tunePath() const;
         void saveTune();
+        void applyPedalResponse();
         bool loadTune(bool quiet);
         void buildCylinderSelector();
         void buildCylinderPlot();

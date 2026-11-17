@@ -394,6 +394,7 @@ void AppUi::onEngineLoaded(Engine *engine, Simulator *simulator) {
         // Beginners drive with the automatic gearbox
         simulator->getEcu().settings().automatic = true;
     }
+    applyPedalResponse();
     if (engine != nullptr && m_preferences.autoLoadTunes && loadTune(true)) {
         log("Loaded the saved ECU tune for " + engine->getName());
     }
@@ -2176,10 +2177,49 @@ void AppUi::buildSettingsWindow() {
             if (ImGui::SliderFloat("##volume", &volume, 0, 100, "%.0f %%")) { p.masterVolume = volume / 100; changed = applyToApp = true; }
             label("Mute when in the background");
             if (ImGui::Checkbox("##mute", &p.muteWhenInactive)) changed = true;
+
+            ImGui::SeparatorText("Engine sound");
+            label("Listening from");
+            const char *positions[] = { "Outside, behind the car", "The driver's seat", "The engine bay" };
+            if (ImGui::Combo("##listener", &p.listenerPosition, positions, 3)) changed = true;
+            ImGui::SameLine(); ui::HelpMarker("Outside the exhaust dominates; in the cockpit it is muffled and booms "
+                "while the intake and the engine come through the firewall; by the engine the intake, valvetrain "
+                "and turbo or supercharger are loudest. [K] cycles through them.");
+            label("Intake roar");
+            float intake = p.intakeVolume * 100;
+            if (ImGui::SliderFloat("##intakevol", &intake, 0, 200, "%.0f %%")) { p.intakeVolume = intake / 100; changed = true; }
+            label("Valvetrain");
+            float mechanical = p.mechanicalVolume * 100;
+            if (ImGui::SliderFloat("##mechvol", &mechanical, 0, 200, "%.0f %%")) { p.mechanicalVolume = mechanical / 100; changed = true; }
+            label("Overrun pops and crackles");
+            float crackle = p.overrunCrackle * 100;
+            if (ImGui::SliderFloat("##crackle", &crackle, 0, 100, "%.0f %%")) { p.overrunCrackle = crackle / 100; changed = true; }
+            ImGui::TextDisabled("The turbo / supercharger level is in the Tuning window (per engine).");
             label("Audio buffer target");
             float latency = p.targetAudioLatency * 1000;
             if (ImGui::SliderFloat("##latency", &latency, 20, 250, "%.0f ms")) { p.targetAudioLatency = latency / 1000; changed = applyToApp = true; }
             ImGui::TextDisabled("Larger buffers stutter less on slow computers but respond later.");
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Driving")) {
+            label("Pedal response");
+            const char *keys[] = { "progressive", "gentle", "linear", "sport", "direct" };
+            const char *names[] = {
+                "Progressive (road car)", "Gentle", "Linear", "Sport", "Direct (raw throttle plate)" };
+            int pedal = 0;
+            for (int i = 0; i < 5; ++i) if (p.pedalResponse == keys[i]) pedal = i;
+            if (ImGui::Combo("##pedal", &pedal, names, 5)) {
+                p.pedalResponse = keys[pedal];
+                applyPedalResponse();
+                changed = true;
+            }
+            ui::HelpMarker("How much torque the throttle pedal asks for. The ECU opens the throttle "
+                "as far as that takes at the current engine speed, like drive-by-wire in a modern car. "
+                "Progressive: 10 % pedal is about 5 % of the torque, half pedal about 40 %. "
+                "Direct moves the throttle plate with the pedal, which delivers most of the torque "
+                "in the first fifth of its travel. The curve itself can be edited in ECU tuning.");
+            ImGui::TextDisabled("Keys: Q 10 %%, W 25 %%, E 50 %%, R full; Space + scroll for fine control.");
             ImGui::EndTabItem();
         }
 

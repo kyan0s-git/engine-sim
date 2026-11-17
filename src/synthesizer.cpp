@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #undef min
 #undef max
@@ -84,14 +86,45 @@ void Synthesizer::initialize(const Parameters &p) {
             m_audioParameters.inputSampleNoiseFrequencyCutoff,
             m_audioSampleRate);
 
-        m_filters[i].antialiasing.setCutoffFrequency(1900.0f, m_audioSampleRate);
     }
+    updateBandwidth();
+    m_inputPeak.assign(p.inputChannelCount, 0.0f);
 
     m_levelingFilter.p_target = m_audioParameters.levelerTarget;
     m_levelingFilter.setReleaseTime(0.4f, m_audioSampleRate);
     m_levelingFilter.p_maxLevel = m_audioParameters.levelerMaxGain;
     m_levelingFilter.p_minLevel = m_audioParameters.levelerMinGain;
     m_antialiasing.setCutoffFrequency(m_audioSampleRate * 0.45f, m_audioSampleRate);
+
+    // Output stage: the gain follows the loudest recent peak with a 2 ms
+    // attack, seen 3 ms ahead of the output so that it is in place before
+    // the peak arrives, and recovers over seconds; the old leveler jumped
+    // to each new peak within a sample (an audible step) and recovered in
+    // 0.4 s, which pumped idle and part throttle up to full-throttle volume
+    m_lookahead.assign(static_cast<size_t>(0.004f * m_audioSampleRate) + 1, 0.0f);
+    m_lookaheadIndex = 0;
+    m_outputPeak = 1e-3f;
+    m_outputReference = 1e-3f;
+    m_outputGain = 1.0f;
+    m_peakRelease = std::exp(-1.0f / (0.35f * m_audioSampleRate));
+    m_referenceRelease = std::exp(-1.0f / (40.0f * m_audioSampleRate));
+    m_referenceAttack = 1.0f - std::exp(-1.0f / (0.8f * m_audioSampleRate));
+    m_gainAttack = 1.0f - std::exp(-1.0f / (0.0005f * m_audioSampleRate));
+    m_gainSmoothing = 1.0f - std::exp(-1.0f / (0.05f * m_audioSampleRate));
+
+    const float fs = m_audioSampleRate;
+    m_intakeDc.set(25.0f, fs);
+    m_intakeBox.set(170.0f, 1.4f, fs);
+    m_intakeSnorkel.set(560.0f, 2.2f, fs);
+    m_intakeRoar.set(1700.0f, 0.7f, fs);
+    m_valveBand.set(3800.0f, 1.3f, fs);
+    m_raspBand.set(2400.0f, 0.6f, fs);
+    m_cabinBoom.set(95.0f, 1.3f, fs);
+    m_cabinLow1.set(1500.0f, fs);
+    m_cabinLow2.set(1500.0f, fs);
+    m_layerLow1.set(2500.0f, fs);
+    m_layerLow2.set(2500.0f, fs);
+    m_bayLow.set(3200.0f, fs);
 
 }
 
@@ -299,14 +332,29 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
         m_channelInput.resize(n);
         m_channelOutput.resize(n);
         m_mixBuffer.resize(n);
+        m_layerBuffer.resize(n);
+        m_envelope.resize(n);
+        m_popBuffer.resize(n);
         m_renderedAudio.resize(n);
     }
 
     const float airNoise = parameters.airNoise;
     const float dF_F_mix = parameters.dF_F_mix;
+    const bool engineChannels = (m_auxChannelCount >= AuxChannels);
 
     std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + n, 0.0f);
+    std::fill(m_layerBuffer.begin(), m_layerBuffer.begin() + n, 0.0f);
 
+    // Overrun pops, shared by the exhaust channels (each scales them to its
+    // own level)
+    const float *overrun = engineChannels
+        ? m_inputChannels[m_inputChannelCount + ForcedInductionChannels + 2].transferBuffer
+        : nullptr;
+    for (int j = 0; j < n; ++j) {
+        m_popBuffer[j] = (overrun != nullptr) ? overrunPop(overrun[j], parameters.overrunCrackle) : 0.0f;
+    }
+
+    const float peakRelease = std::exp(-1.0f / (8.0f * m_audioSampleRate));
     for (int i = 0; i < m_inputChannelCount; ++i) {
         ProcessingFilters &filters = m_filters[i];
         filters.airNoiseLowPass.setCutoffFrequency(
@@ -314,6 +362,7 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
         filters.jitterFilter.setJitterScale(parameters.inputSampleNoise);
 
         const float *transfer = m_inputChannels[i].transferBuffer;
+        float &inputPeak = m_inputPeak[i];
         for (int j = 0; j < n; ++j) {
             const float f_in = filters.jitterFilter.fast_f(transfer[j]);
             const float f_dc = filters.inputDcFilter.fast_f(f_in);
@@ -329,9 +378,13 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
             float v_in =
                 f_p * dF_F_mix
                 + f * r_mixed * (1 - dF_F_mix);
-            if (std::fpclassify(v_in) == FP_SUBNORMAL) {
+            if (!std::isfinite(v_in) || std::fpclassify(v_in) == FP_SUBNORMAL) {
                 v_in = 0;
             }
+
+            // The pops are sized by the loudest recent exhaust pulses
+            inputPeak = std::max(std::abs(v_in), inputPeak * peakRelease);
+            v_in += m_popBuffer[j] * inputPeak;
 
             m_channelInput[j] = v_in;
         }
@@ -344,22 +397,161 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
         }
     }
 
+    renderEngineLayers(n, parameters);
     renderForcedInduction(n, parameters);
 
-    m_levelingFilter.p_target = parameters.levelerTarget;
+    // Listener perspective: the exhaust heard through the cabin is muffled
+    // and booms; by the engine it is distant. The other layers (intake,
+    // valvetrain, forced induction) are mostly heard through the firewall
+    // from the cockpit.
+    const int perspective = std::clamp(parameters.perspective, 0, 2);
+    if (perspective != m_perspective) {
+        m_cabinLow1.z = m_cabinLow2.z = m_layerLow1.z = m_layerLow2.z = m_bayLow.z = 0;
+        m_perspective = perspective;
+    }
     for (int j = 0; j < n; ++j) {
-        const float signal = m_antialiasing.fast_f(m_mixBuffer[j]);
-        const float v_leveled = m_levelingFilter.f(signal) * parameters.volume;
-
-        long r_int = std::lround(v_leveled);
-        if (r_int > INT16_MAX) {
-            r_int = INT16_MAX;
+        float exhaust = m_mixBuffer[j];
+        float layers = m_layerBuffer[j];
+        if (perspective == 1) {
+            const float muffled = m_cabinLow2.process(m_cabinLow1.process(exhaust));
+            exhaust = 0.75f * muffled + 1.1f * m_cabinBoom.process(exhaust);
+            layers = m_layerLow2.process(m_layerLow1.process(layers));
         }
-        else if (r_int < INT16_MIN) {
-            r_int = INT16_MIN;
+        else if (perspective == 2) {
+            exhaust = 0.55f * m_bayLow.process(exhaust);
+        }
+        m_mixBuffer[j] = exhaust + layers;
+    }
+
+    // Output: look-ahead loudness stage, then a soft clipper so that what
+    // still gets through is rounded instead of cut flat
+    const float target = parameters.levelerTarget;
+    const int lookahead = static_cast<int>(m_lookahead.size());
+    for (int j = 0; j < n; ++j) {
+        float signal = m_antialiasing.fast_f(m_mixBuffer[j]);
+        if (!std::isfinite(signal)) signal = 0;
+
+        // Two followers: the recent peak and the loudest the engine has
+        // been lately (sustained for about a second, released over ~40 s,
+        // so that a start-up flare or a pop doesn't set it). The loudest is
+        // brought to the
+        // target; quieter sound is lifted only part of the way (60 % in dB),
+        // so idle stays quieter than full throttle without dropping out
+        const float level = std::abs(signal);
+        // (the gain itself is smoothed and looks ahead, so the follower can
+        // take each peak at once)
+        m_outputPeak = std::max(level, std::max(m_outputPeak * m_peakRelease, 1e-3f));
+        if (m_outputPeak > m_outputReference) m_outputReference += (m_outputPeak - m_outputReference) * m_referenceAttack;
+        else m_outputReference = std::max(m_outputReference * m_referenceRelease, 1e-3f);
+
+        const float wanted = std::clamp(
+            std::min(target / m_outputReference * std::pow(m_outputReference / m_outputPeak, 0.6f), target / m_outputPeak),
+            parameters.levelerMinGain, 64.0f);
+        m_outputGain += (wanted - m_outputGain) * ((wanted < m_outputGain) ? m_gainAttack : m_gainSmoothing);
+
+        float delayed = signal;
+        if (lookahead > 1) {
+            delayed = m_lookahead[m_lookaheadIndex];
+            m_lookahead[m_lookaheadIndex] = signal;
+            m_lookaheadIndex = (m_lookaheadIndex + 1) % lookahead;
         }
 
-        m_renderedAudio[j] = static_cast<int16_t>(r_int);
+        float v = delayed * m_outputGain * parameters.volume;
+        constexpr float Knee = 24000.0f;
+        constexpr float Room = 32767.0f - Knee;
+        const float a = std::abs(v);
+        if (a > Knee) {
+            v = std::copysign(Knee + Room * std::tanh((a - Knee) / Room), v);
+        }
+
+        m_renderedAudio[j] = static_cast<int16_t>(std::clamp(std::lround(v), -32767L, 32767L));
+    }
+}
+
+float Synthesizer::overrunPop(float overrun, float amount) {
+    // Unburnt fuel lighting off in the exhaust after a lift: random pops at
+    // up to ~25 per second, each a sharp burst that dies within a few ms
+    if (m_popEnvelope > 1e-3f) {
+        m_popEnvelope *= m_popDecay;
+    }
+    else {
+        m_popEnvelope = 0;
+        const float rate = 25.0f * std::clamp(overrun, 0.0f, 1.0f) * std::clamp(amount, 0.0f, 1.0f);
+        if (rate > 0 && 0.5f * (noise() + 1.0f) < rate / m_audioSampleRate) {
+            const float u = 0.5f * (noise() + 1.0f);
+            m_popEnvelope = 1.0f;
+            m_popAmplitude = (0.5f + 1.5f * u * u) * std::clamp(amount, 0.0f, 1.0f) * 1.6f;
+            m_popDecay = std::exp(-1.0f / ((0.0015f + 0.006f * 0.5f * (noise() + 1.0f)) * m_audioSampleRate));
+        }
+    }
+    return m_popAmplitude * m_popEnvelope * noise();
+}
+
+void Synthesizer::OnePole::set(float fc, float fs) {
+    a = 1.0f - std::exp(-2.0f * 3.14159265f * fc / fs);
+}
+
+// Intake and valvetrain layers, driven by control channels from the
+// simulation: [0] flow through the throttle, [1] throttle opening (as flow,
+// 0 to 1), [2] overrun (0 to 1), [3] firing frequency [Hz]. Their loudness
+// follows the exhaust's, so they need no calibration per engine.
+void Synthesizer::renderEngineLayers(int n, const AudioParameters &parameters) {
+    const float fs = m_audioSampleRate;
+    const float envelopeDecay = 1.0f - 1.0f / (0.3f * fs);
+    for (int j = 0; j < n; ++j) {
+        const float a = std::abs(m_mixBuffer[j]);
+        m_mixEnvelope = std::max(a * (1 - envelopeDecay) + m_mixEnvelope * envelopeDecay, 0.0f);
+        m_envelope[j] = m_mixEnvelope;
+    }
+
+    if (m_auxChannelCount < AuxChannels) return;
+    const float *intake = m_inputChannels[m_inputChannelCount + ForcedInductionChannels + 0].transferBuffer;
+    const float *opening = m_inputChannels[m_inputChannelCount + ForcedInductionChannels + 1].transferBuffer;
+    const float *firing = m_inputChannels[m_inputChannelCount + ForcedInductionChannels + 3].transferBuffer;
+
+    const int perspective = std::clamp(parameters.perspective, 0, 2);
+    const float intakeWeights[] = { 0.3f, 0.55f, 1.1f };
+    const float valveWeights[] = { 0.06f, 0.14f, 0.35f };
+    const float intakeGain = parameters.intakeVolume * intakeWeights[perspective];
+    const float valveGain = parameters.mechanicalVolume * valveWeights[perspective];
+    const float peakRelease = std::exp(-1.0f / (4.0f * fs));
+    const float valveDecay = std::exp(-1.0f / (0.0012f * fs));
+
+    const float raspWeights[] = { 1.0f, 0.5f, 0.6f };
+    const float raspGain = 0.22f * raspWeights[perspective];
+    for (int j = 0; j < n; ++j) {
+        // Exhaust rasp: turbulent flow noise at the tailpipe, pulsing with
+        // the exhaust and growing with the load
+        const float open = std::clamp(opening[j], 0.0f, 1.0f);
+        const float pulse = std::abs(m_mixBuffer[j]);
+        m_mixBuffer[j] += raspGain * (0.25f + 0.75f * open) * pulse * m_raspBand.process(noise());
+
+        // Induction: the pulsing flow through the throttle excites the air
+        // box and the inlet snorkel; with the throttle open the roar of the
+        // air rushing in joins them
+        const float x = intake[j] - m_intakeDc.process(intake[j]);
+        const float resonant = m_intakeBox.process(x) + 0.6f * m_intakeSnorkel.process(x);
+        const float roar = m_intakeRoar.process(noise()) * std::abs(x);
+        const float raw = resonant + 2.0f * roar;
+        m_intakePeak = std::max(std::abs(raw), m_intakePeak * peakRelease);
+        const float load = open * std::sqrt(open);
+        const float induction = (m_intakePeak > 1e-9f) ? raw / m_intakePeak : 0.0f;
+
+        // Valvetrain: a tick for every valve event (two per firing)
+        const float f = std::max(firing[j], 0.0f);
+        m_valvePhase += 2.0 * f / fs;
+        if (m_valvePhase >= 1.0) {
+            m_valvePhase -= std::floor(m_valvePhase);
+            m_valveEnvelope = 1.0f;
+            m_valveAmplitude = 0.6f + 0.4f * std::abs(noise());
+        }
+        m_valveEnvelope *= valveDecay;
+        const float speed = std::clamp(f / 400.0f, 0.0f, 1.5f);
+        const float tick = m_valveBand.process(noise()) * m_valveEnvelope * m_valveAmplitude * speed;
+
+        m_layerBuffer[j] += m_envelope[j] * (
+            intakeGain * (0.15f + 0.85f * load) * induction
+            + valveGain * 6.0f * tick);
     }
 }
 
@@ -388,28 +580,27 @@ float Synthesizer::Bandpass::process(float x) {
 // types 1 turbo, 2 Roots, 3 twin-screw, 4 centrifugal; blow-off 0 vented,
 // 1 recirculating, 2 none)
 void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters) {
-    if (m_auxChannelCount < 7) return;
+    if (m_auxChannelCount < ForcedInductionChannels) return;
 
     const float *const *aux = m_auxPointers;
-    for (int k = 0; k < 7; ++k) m_auxPointers[k] = m_inputChannels[m_inputChannelCount + k].transferBuffer;
+    for (int k = 0; k < ForcedInductionChannels; ++k) m_auxPointers[k] = m_inputChannels[m_inputChannelCount + k].transferBuffer;
 
     const int mode = static_cast<int>(std::lround(aux[6][0]));
     const int type = mode / 10;
     const int blowoffType = mode % 10;
     if (type == 0) return;
 
-    const float volume = parameters.forcedInductionVolume;
+    const float perspectiveWeights[] = { 1.0f, 0.8f, 1.35f };
+    const float volume = parameters.forcedInductionVolume * perspectiveWeights[std::clamp(parameters.perspective, 0, 2)];
     const float fs = m_audioSampleRate;
-    const float envelopeDecay = 1.0f - 1.0f / (0.3f * fs);
     const float floor = 0.08f * parameters.levelerTarget;
     const double twoPi = 2 * 3.14159265358979323846;
 
     for (int j = 0; j < n; ++j) {
         // The sounds follow the loudness of the engine (with a floor so that
         // a blow-off on a quiet overrun is still heard)
-        const float a = std::abs(m_mixBuffer[j]);
-        m_mixEnvelope = std::max(a * (1 - envelopeDecay) + m_mixEnvelope * envelopeDecay, 0.0f);
-        const float reference = 0.8f * m_mixEnvelope + floor;
+        const float envelope = m_envelope[j];
+        const float reference = 0.8f * envelope + floor;
 
         const float shaft = std::max(aux[0][j], 0.0f);
         const float whine = std::max(aux[1][j], 0.0f);
@@ -488,7 +679,7 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
             bursts += 0.6f * wastegate * m_wastegateBand.process(noise());
         }
 
-        m_mixBuffer[j] += volume * (tonal * (1.1f * m_mixEnvelope + 0.4f * floor) + bursts * reference * 1.5f);
+        m_layerBuffer[j] += volume * (tonal * (1.1f * envelope + 0.4f * floor) + bursts * reference * 1.5f);
     }
 }
 
@@ -513,16 +704,32 @@ double Synthesizer::inputDistance(double s1, double s0) const {
         : s1 - s0;
 }
 
+void Synthesizer::updateBandwidth() {
+    // The exhaust signal is band limited to 40 % of the simulation's sample
+    // rate (above that the linear upsampling only adds images), at most
+    // 7 kHz. It used to be cut at 1.9 kHz whatever the rate, which removed
+    // the rasp and crackle of a real exhaust and left a boom.
+    if (m_filters == nullptr || m_audioSampleRate <= 0) return;
+    const float cutoff = std::clamp(0.4f * m_inputSampleRate, 400.0f, 7000.0f);
+    for (int i = 0; i < m_inputChannelCount; ++i) {
+        m_filters[i].antialiasing.setCutoffFrequency(cutoff, m_audioSampleRate);
+    }
+}
+
 void Synthesizer::setInputSampleRate(double sampleRate) {
     if (sampleRate != m_inputSampleRate) {
         std::lock_guard<std::mutex> lock(m_lock0);
+        std::lock_guard<std::mutex> inputLock(m_inputLock);
         m_inputSampleRate = sampleRate;
+
+        // The input filters run in writeInput(), under the input lock
+        updateBandwidth();
     }
 }
 
 double Synthesizer::getLevelerGain() {
     std::lock_guard<std::mutex> lock(m_lock0);
-    return m_levelingFilter.getAttenuation();
+    return m_outputGain;
 }
 
 Synthesizer::AudioParameters Synthesizer::getAudioParameters() {

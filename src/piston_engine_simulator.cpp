@@ -1,8 +1,11 @@
 #include "../include/piston_engine_simulator.h"
 
 #include "../include/constants.h"
+#include "../include/ignition_module.h"
+#include "../include/intake.h"
 #include "../include/units.h"
 
+#include <algorithm>
 #include <cmath>
 #include <assert.h>
 #include <chrono>
@@ -269,7 +272,7 @@ void PistonEngineSimulator::placeAndInitialize() {
     m_engine->getIgnitionModule()->reset();
 
     // Exhaust channels followed by the forced induction control channels
-    m_exhaustFlowStagingBuffer = new double[m_engine->getExhaustSystemCount() + 7];
+    m_exhaustFlowStagingBuffer = new double[m_engine->getExhaustSystemCount() + Synthesizer::AuxChannels];
 }
 
 void PistonEngineSimulator::placeCylinder(int i) {
@@ -492,7 +495,7 @@ void PistonEngineSimulator::writeToSynthesizer() {
     }
 
     double *aux = m_exhaustFlowStagingBuffer + exhaustSystemCount;
-    for (int i = 0; i < 7; ++i) aux[i] = 0;
+    for (int i = 0; i < Synthesizer::AuxChannels; ++i) aux[i] = 0;
     if (forcedInduction != nullptr) {
         int type = 1;
         switch (forcedInduction->getType()) {
@@ -510,6 +513,29 @@ void PistonEngineSimulator::writeToSynthesizer() {
         aux[5] = forcedInduction->getWastegateNoise();
         aux[6] = 10 * type + static_cast<int>(forcedInduction->getBlowoffType());
     }
+
+    // Engine layers: flow through the throttle(s), the throttle opening as
+    // a share of its full flow, how hard the engine is on the overrun, and
+    // the firing frequency
+    double *engineAux = aux + Synthesizer::ForcedInductionChannels;
+    const int intakeCount = m_engine->getIntakeCount();
+    double intakeFlow = 0, opening = 0;
+    for (int i = 0; i < intakeCount; ++i) {
+        Intake *intake = m_engine->getIntake(i);
+        intakeFlow += intake->m_flow;
+        opening += std::cos(intake->getThrottlePlatePosition() * constants::pi / 2);
+    }
+    engineAux[0] = attenuation_3 * intakeFlow / timestep;
+    engineAux[1] = (intakeCount > 0) ? opening / intakeCount : 0.0;
+
+    const double rpm = std::abs(m_engine->getRpm());
+    const Ecu::Settings &ecu = getEcu().settings();
+    const double idle = std::max(ecu.idleRpm, 500.0);
+    const bool lifted = m_engine->getSpeedControl() < 0.05 && m_engine->getIgnitionModule()->m_enabled;
+    engineAux[2] = lifted
+        ? std::clamp((rpm - 1.6 * idle) / std::max(0.25 * units::toRpm(m_engine->getRedline()), 500.0), 0.0, 1.0)
+        : 0.0;
+    engineAux[3] = rpm / 60.0 * std::max(cylinderCount, 1) / 2.0;
 
     synthesizer().writeInput(m_exhaustFlowStagingBuffer);
 }

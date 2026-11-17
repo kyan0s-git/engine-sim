@@ -1,8 +1,11 @@
 #include "../include/ecu.h"
 
+#include "../include/constants.h"
+#include "../include/direct_throttle_linkage.h"
 #include "../include/engine.h"
 #include "../include/forced_induction.h"
 #include "../include/ignition_module.h"
+#include "../include/intake.h"
 #include "../include/transmission.h"
 #include "../include/units.h"
 #include "../include/vehicle.h"
@@ -100,6 +103,10 @@ Ecu::Ecu() {
     m_launchClutch = 0;
     m_dashpot = 0;
     m_lastThrottle = 0;
+    m_pedalGain = 0;
+    m_pedalLearned = false;
+    m_closedLoad = 0;
+    m_loadFiltered = 0;
     m_timeInGear = 0;
 }
 
@@ -116,6 +123,10 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     m_launchClutch = 0;
     m_dashpot = 0;
     m_lastThrottle = 0;
+    m_pedalGain = 0;
+    m_pedalLearned = false;
+    m_closedLoad = 0;
+    m_loadFiltered = 0;
 
     Settings s;
     IgnitionModule *ignition = engine->getIgnitionModule();
@@ -163,6 +174,14 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     s.useBoostMap = (fi != nullptr && fi->isTurbocharger());
     s.antiLagMinRpm = std::round(0.35 * redline / 100.0) * 100.0;
     s.idleRpm = 0;      // set below
+
+    // Pedal: progressive like a road car's drive-by-wire map (10 % pedal is
+    // about 5 % torque, half pedal about 40 %)
+    s.pedal.name = "Pedal map";
+    s.pedal.xLabel = "Pedal [%]";
+    s.pedal.unit = "% torque";
+    s.pedal.resize(linspace(0, 100, 11), {}, 0);
+    setPedalCurve(&s.pedal, "progressive");
 
     // Gearbox: upshift early at light throttle, near the limit at full
     s.upshift.name = "Upshift";
@@ -296,8 +315,6 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
     // Held on the brakes at a standstill (staging a launch): clutch out
     if (m_vehicle->getBrakeLevel() > 0 && vehicleSpeed < 1.0) {
         m_launchClutch = 0;
-    m_dashpot = 0;
-    m_lastThrottle = 0;
         t->setClutchPressure(0.0);
         return;
     }
@@ -376,6 +393,8 @@ void Ecu::update(double dt) {
         ignition->setCut(false);
         ignition->setRevLimit(units::rpm(m_stock.revLimit));
         m_engine->setSpeedControlLimits(0.0, 1.0);
+        m_engine->setSpeedControlOverride(-1.0);
+        m_state.throttleCommand = -1;
         for (int i = 0; i < m_engine->getIntakeCount(); ++i) {
             m_engine->getIntake(i)->setLambda(m_stock.lambda.sample(rpm, 100.0));
         }
@@ -475,10 +494,11 @@ void Ecu::update(double dt) {
         // lets it go slowly, so that the engine coming down from a run (or
         // with the clutch let go when braking to a stop) settles at idle
         // instead of falling through it
-        // It is set when the throttle closes (never while it is closed, or
-        // the extra air could hold the engine up) and bleeds off near idle
-        if (throttle < 0.03 && m_lastThrottle >= 0.03 && rpm > 1.5 * s.idleRpm) m_dashpot = 0.015;
-        else if (rpm < 1.3 * s.idleRpm) m_dashpot = std::max(m_dashpot - 0.0075 * dt, 0.0);
+        // It is set when the throttle closes and bleeds off over about 1.5 s
+        // whatever the engine speed: holding it until the engine came down
+        // to idle let the extra air hold an unloaded engine at ~4000 rpm
+        if (throttle < 0.03 && m_lastThrottle >= 0.03 && rpm > 1.5 * s.idleRpm) m_dashpot = 0.012;
+        else m_dashpot = std::max(m_dashpot - 0.008 * dt, 0.0);
         if (throttle >= 0.03) m_dashpot = 0;
 
         // Well below the target the engine is about to stall: catch it hard
@@ -508,10 +528,97 @@ void Ecu::update(double dt) {
         || (m_state.shifting && m_shiftTimer > 0.5 * s.shiftTime && throttle > 0.2);
     ignition->setCut(cut);
     m_engine->setSpeedControlLimits(floor, m_state.shifting ? 0.0 : 1.0);
+    updatePedal(dt, rpm, throttle);
 
     m_state.advance = advance;
     m_state.limiting = ignition->isLimiting();
     m_state.gear = (m_transmission != nullptr) ? m_transmission->getGear() : -1;
+}
+
+void Ecu::updatePedal(double dt, double rpm, double pedal) {
+    constexpr double ZeroTorqueLoad = 0.3;
+    m_state.pedal = pedal;
+    DirectThrottleLinkage *linkage = dynamic_cast<DirectThrottleLinkage *>(m_engine->getThrottleLinkage());
+    if (!m_settings.pedalControl || linkage == nullptr || m_engine->getIntakeCount() == 0 || rpm < 200) {
+        m_engine->setSpeedControlOverride(-1.0);
+        m_state.throttleCommand = -1;
+        return;
+    }
+
+    // Manifold pressure as a share of the pressure ahead of the throttle
+    // (the charge air on a boosted engine), filtered: it pulses with every
+    // intake stroke
+    const ForcedInduction *fi = m_engine->getForcedInduction();
+    const double upstream = (fi != nullptr)
+        ? std::max(fi->getChargePressure(), units::pressure(0.5, units::atm))
+        : units::pressure(1.0, units::atm);
+    const double load = std::clamp(m_engine->getManifoldPressure() / upstream, 0.0, 1.5);
+    m_loadFiltered += (load - m_loadFiltered) * std::min(dt / 0.04, 1.0);
+
+    // Some engines' manifold pressure barely responds to the throttle
+    // (a large idle opening, restrictive runners): there the closed-loop
+    // map would leave a dead pedal, so the pedal map drives the throttle
+    // linkage directly instead
+    if (pedal < 0.01 && m_engine->getIgnitionModule()->m_enabled && rpm > 0.7 * m_settings.idleRpm) {
+        m_closedLoad += (m_loadFiltered - m_closedLoad) * std::min(dt / 0.5, 1.0);
+    }
+    if (m_closedLoad > 0.6) {
+        const double share = std::clamp(m_settings.pedal.sample(pedal * 100.0) / 100.0, 0.0, 1.0);
+        m_engine->setSpeedControlOverride(share);
+        m_state.throttleCommand = share;
+        m_state.loadTarget = -1;
+        return;
+    }
+
+    // The pedal's share of the torque as a manifold pressure: about a third
+    // of the upstream pressure is what an engine needs to just overcome its
+    // own friction and pumping
+    double command;
+    const double torqueShare = std::clamp(m_settings.pedal.sample(pedal * 100.0) / 100.0, 0.0, 1.0);
+    if (pedal < 0.01) {
+        command = 0.0;
+        m_state.loadTarget = 0;
+    }
+    else if (pedal > 0.985 || torqueShare > 0.985) {
+        command = 1.0;
+        m_state.loadTarget = 1;
+    }
+    else {
+        const double target = std::min(ZeroTorqueLoad + (1.0 - ZeroTorqueLoad) * torqueShare, 0.97);
+        m_state.loadTarget = target;
+
+        // Throttle flow (the cosine of the plate angle) for the target: the
+        // engine draws flow in proportion to its speed and the manifold
+        // pressure, the throttle passes it in proportion to its opening and
+        // (roughly) the square root of the pressure drop. The constant
+        // between them is learned while driving.
+        if (!m_pedalLearned) {
+            m_pedalGain = std::log(1e-5);
+            m_pedalLearned = true;
+        }
+        const double flow = std::exp(m_pedalGain) * rpm * target / std::sqrt(std::max(1.0 - target, 0.03));
+        const double x = std::clamp(flow, 0.0, 1.0);
+
+        // Integral learning on the error, only while the engine runs on
+        // its own (cranking fills the manifold whatever the throttle does)
+        // and paused while the throttle is wide open (it can't do more) or
+        // the gearbox shifts. The bounds span engines from a lawnmower to a
+        // V12.
+        const bool running = m_engine->getIgnitionModule()->m_enabled && rpm > 0.7 * m_settings.idleRpm;
+        if (running && x < 0.999 && !m_state.shifting && !m_state.limiting) {
+            m_pedalGain += 10.0 * (target - m_loadFiltered) * dt;
+            m_pedalGain = std::clamp(m_pedalGain, std::log(5e-7), std::log(2e-4));
+        }
+
+        // Back from flow to the plate position, then through the linkage
+        const double idlePlate = m_engine->getIntake(0)->getIdleThrottlePlatePosition();
+        const double plate = std::acos(x) * 2.0 / constants::pi;     // 0 = open, 1 = closed
+        const double position = std::clamp(plate / std::max(idlePlate, 1e-3), 0.0, 1.0);
+        command = std::pow(1.0 - position, 1.0 / std::max(linkage->getGamma(), 0.05));
+    }
+
+    m_engine->setSpeedControlOverride(command);
+    m_state.throttleCommand = command;
 }
 
 void Ecu::optimizeShiftPoints(const std::vector<double> &rpm, const std::vector<double> &torque) {
@@ -569,15 +676,18 @@ std::string Ecu::serialize() const {
       << "anti_lag_retard=" << s.antiLagRetard << "\n"
       << "anti_lag_air=" << s.antiLagAir << "\n"
       << "anti_lag_min_rpm=" << s.antiLagMinRpm << "\n"
+      << "pedal_control=" << s.pedalControl << "\n"
       << "automatic=" << s.automatic << "\n"
       << "shift_time=" << s.shiftTime << "\n"
       << "launch_clutch_rpm=" << s.launchClutchRpm << "\n"
       << "wot_upshift=" << join(s.wotUpshift) << "\n";
 
-    for (const EcuTable *t : { &s.ignition, &s.lambda, &s.boost, &s.upshift, &s.downshift }) {
+    for (const EcuTable *t : { &s.ignition, &s.lambda, &s.boost, &s.upshift, &s.downshift, &s.pedal }) {
         const std::string key =
             (t == &s.ignition) ? "ignition" : (t == &s.lambda) ? "lambda"
-            : (t == &s.boost) ? "boost" : (t == &s.upshift) ? "upshift" : "downshift";
+            : (t == &s.boost) ? "boost" : (t == &s.upshift) ? "upshift"
+            : (t == &s.pedal) ? "pedal" : "downshift";
+        if (t->cols() < 2) continue;
         o << key << ".x=" << join(t->x) << "\n";
         if (!t->y.empty()) o << key << ".y=" << join(t->y) << "\n";
         for (int r = 0; r < t->rows(); ++r) {
@@ -630,6 +740,7 @@ bool Ecu::deserialize(const std::string &text, std::string *error) {
     number("anti_lag_retard", &s.antiLagRetard);
     number("anti_lag_air", &s.antiLagAir);
     number("anti_lag_min_rpm", &s.antiLagMinRpm);
+    flag("pedal_control", &s.pedalControl);
     flag("automatic", &s.automatic);
     number("shift_time", &s.shiftTime);
     number("launch_clutch_rpm", &s.launchClutchRpm);
@@ -639,10 +750,11 @@ bool Ecu::deserialize(const std::string &text, std::string *error) {
         s.wotUpshift = w;
     }
 
-    for (EcuTable *t : { &s.ignition, &s.lambda, &s.boost, &s.upshift, &s.downshift }) {
+    for (EcuTable *t : { &s.ignition, &s.lambda, &s.boost, &s.upshift, &s.downshift, &s.pedal }) {
         const std::string key =
             (t == &s.ignition) ? "ignition" : (t == &s.lambda) ? "lambda"
-            : (t == &s.boost) ? "boost" : (t == &s.upshift) ? "upshift" : "downshift";
+            : (t == &s.boost) ? "boost" : (t == &s.upshift) ? "upshift"
+            : (t == &s.pedal) ? "pedal" : "downshift";
         if (!values.count(key + ".x")) continue;
 
         EcuTable table = *t;
@@ -673,6 +785,18 @@ bool Ecu::deserialize(const std::string &text, std::string *error) {
     return true;
 }
 
+void Ecu::setPedalCurve(EcuTable *table, const std::string &name) {
+    for (int i = 0; i < table->cols(); ++i) {
+        const double p = std::clamp(table->x[i] / 100.0, 0.0, 1.0);
+        double share;
+        if (name == "gentle") share = 0.25 * p + 0.75 * p * p;
+        else if (name == "linear") share = p;
+        else if (name == "sport") share = 1.0 - (1.0 - p) * (1.0 - p);
+        else share = 0.5 * p + 0.5 * p * p;     // progressive (stock)
+        table->at(0, i) = std::round(1000.0 * share) / 10.0;
+    }
+}
+
 void Ecu::applyPreset(const std::string &name) {
     m_settings = m_stock;
     Settings &s = m_settings;
@@ -690,6 +814,7 @@ void Ecu::applyPreset(const std::string &name) {
         for (double &v : s.downshift.v) v *= 0.85;
         for (double &v : s.boost.v) v *= 0.8;
         s.limiter = Limiter::Soft;
+        setPedalCurve(&s.pedal, "gentle");
     }
     else if (name == "performance" || name == "race") {
         // Full-load enrichment and part-load advance
@@ -713,6 +838,7 @@ void Ecu::applyPreset(const std::string &name) {
         s.launchControl = true;
         s.shiftTime = 0.18;
         s.idleControl = true;
+        setPedalCurve(&s.pedal, (name == "race") ? "sport" : "linear");
 
         if (name == "race") {
             s.revLimit += 300;

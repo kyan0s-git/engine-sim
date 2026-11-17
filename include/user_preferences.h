@@ -35,6 +35,14 @@ struct UserPreferences {
     // Audio
     float masterVolume = 1.0f;
     bool muteWhenInactive = false;
+    int listenerPosition = 0;               // 0 outside, 1 cockpit, 2 engine bay
+    float intakeVolume = 1.0f;
+    float mechanicalVolume = 1.0f;
+    float overrunCrackle = 0.35f;
+
+    // Driving: "progressive" (stock), "gentle", "linear", "sport" pedal
+    // maps, or "direct" (the pedal moves the throttle plate)
+    std::string pedalResponse = "progressive";
 
     // Simulation (0 = the engine's own setting)
     int simulationFrequency = 0;

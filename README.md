@@ -69,7 +69,8 @@ Engines can have a turbocharger (single, twin or sequential) or a Roots, twin-sc
 | :---: | :--- |
 | A | Toggle ignition |
 | S | Hold for starter |
-| Q, W, E, R | Throttle presets |
+| Q, W, E, R | Throttle pedal at 10 %, 25 %, 50 %, 100 % |
+| K | Listening position: outside, driver's seat, engine bay |
 | Space + Scroll | Fine throttle adjustment |
 | Up / Down Arrow | Shift up / down |
 | Shift | Hold to depress the clutch (hold Space as well to engage/disengage slowly) |

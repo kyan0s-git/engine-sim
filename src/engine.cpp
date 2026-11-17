@@ -447,7 +447,8 @@ double Engine::getIntakeFlowRate() const {
 
 void Engine::update(double dt) {
     const double requested = m_throttle->getSpeedControl();
-    const double limited = std::clamp(requested, m_speedControlFloor, std::max(m_speedControlCeiling, m_speedControlFloor));
+    const double demand = (m_speedControlOverride >= 0) ? m_speedControlOverride : requested;
+    const double limited = std::clamp(demand, m_speedControlFloor, std::max(m_speedControlCeiling, m_speedControlFloor));
     if (limited != requested) {
         m_throttle->setSpeedControl(limited);
         m_throttle->update(dt, this);

@@ -18,6 +18,8 @@ public:
     virtual void setSpeedControl(double s);
     virtual void update(double dt, Engine *engine);
 
+    double getGamma() const { return m_gamma; }
+
 protected:
     double m_gamma;
     double m_throttlePosition;

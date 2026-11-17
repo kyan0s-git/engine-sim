@@ -15,8 +15,10 @@
 // simulation time step; --frequency 20000 or higher reduces that error for
 // engineering use (at the cost of running slower than real time).
 
+#include "../include/ecu.h"
 #include "../include/engine.h"
 #include "../include/engine_metrics.h"
+#include "../include/forced_induction.h"
 #include "../include/simulator.h"
 #include "../include/transmission.h"
 #include "../include/vehicle.h"
@@ -313,6 +315,12 @@ int main(int argc, char *argv[]) {
             average.add(m, torque, engine->getManifoldPressure(), engine->getRpm(), dt);
         });
         average.finish();
+        if (std::getenv("DYNO_ECU_TRACE") != nullptr) {
+            const Ecu::State &e = simulator->getEcu().state();
+            std::fprintf(stderr, "ecu: pedal %.2f command %.3f load target %.2f map %.2f atm charge %.2f atm\n",
+                e.pedal, e.throttleCommand, e.loadTarget, engine->getManifoldPressure() / 101325.0,
+                engine->getForcedInduction() != nullptr ? engine->getForcedInduction()->getChargePressure() / 101325.0 : 1.0);
+        }
 
         const EngineMetrics &m = average.metrics;
         const double torque = average.torque;

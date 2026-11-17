@@ -294,6 +294,19 @@ std::string AppUi::tunePath() const {
     return (fs::path(m_app->getUserDataPath()) / "tunes" / (stem + ".ecu")).string();
 }
 
+void AppUi::applyPedalResponse() {
+    if (m_simulator == nullptr) return;
+
+    Ecu::Settings &settings = m_simulator->getEcu().settings();
+    if (m_preferences.pedalResponse == "direct") {
+        settings.pedalControl = false;
+    }
+    else {
+        settings.pedalControl = true;
+        Ecu::setPedalCurve(&settings.pedal, m_preferences.pedalResponse);
+    }
+}
+
 void AppUi::saveTune() {
     if (m_simulator == nullptr) return;
 

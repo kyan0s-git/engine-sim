@@ -7,9 +7,16 @@
 //
 // Example:
 //     engine-sim-drive --data . --auto --preset performance engine.mr
+//
+// With --wav the synthesized sound is rendered offline (with the engine's
+// impulse responses, as in the application) and written to a file; --rev
+// replaces the launch with a free-revving routine in neutral, for listening
+// to and analysing the sound.
 
 #include "../include/ecu.h"
 #include "../include/engine.h"
+#include "../include/exhaust_system.h"
+#include "../include/impulse_response.h"
 #include "../include/forced_induction.h"
 #include "../include/simulator.h"
 #include "../include/transmission.h"
@@ -44,7 +51,78 @@ namespace {
         double trace = 0.5;         // [s] between trace lines, 0 = none
         bool antiLag = false;
         double idle = 1.0;          // [s] of idling before the launch
+        std::string wav;            // write the rendered sound here
+        bool rev = false;           // free-revving routine instead of a launch
+        int perspective = 0;        // 0 outside, 1 cockpit, 2 engine bay
+        float crackle = -1;         // overrun pops, -1 = default
     };
+
+    // Offline audio: rendered after every frame instead of by the audio
+    // thread, so the result doesn't depend on timing
+    std::vector<int16_t> g_audio;
+    bool g_renderAudio = false;
+
+    void collectAudio(Simulator *simulator) {
+        Synthesizer &synthesizer = simulator->synthesizer();
+        int16_t buffer[4096];
+        for (;;) {
+            synthesizer.renderAudio();
+            const int n = synthesizer.readAudioOutput(4096, buffer);
+            if (n <= 0) break;
+            g_audio.insert(g_audio.end(), buffer, buffer + n);
+            if (n < 4096) break;
+        }
+    }
+
+    bool readWav16(const std::string &path, std::vector<int16_t> *samples) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) return false;
+        char riff[12];
+        file.read(riff, 12);
+        if (!file || std::string(riff, 4) != "RIFF" || std::string(riff + 8, 4) != "WAVE") return false;
+
+        uint16_t channels = 1, bits = 16;
+        while (file) {
+            char id[4];
+            uint32_t size = 0;
+            file.read(id, 4);
+            file.read(reinterpret_cast<char *>(&size), 4);
+            if (!file) return false;
+            const std::string chunk(id, 4);
+            if (chunk == "fmt ") {
+                std::vector<char> fmt(size);
+                file.read(fmt.data(), size);
+                channels = *reinterpret_cast<uint16_t *>(&fmt[2]);
+                bits = *reinterpret_cast<uint16_t *>(&fmt[14]);
+            }
+            else if (chunk == "data") {
+                if (bits != 16) return false;
+                std::vector<int16_t> data(size / 2);
+                file.read(reinterpret_cast<char *>(data.data()), size);
+                for (size_t i = 0; i < data.size(); i += channels) samples->push_back(data[i]);
+                return !samples->empty();
+            }
+            else {
+                file.seekg(size + (size & 1), std::ios::cur);
+            }
+        }
+        return false;
+    }
+
+    void writeWav16(const std::string &path, const std::vector<int16_t> &samples, int rate) {
+        std::ofstream file(path, std::ios::binary);
+        const uint32_t dataSize = static_cast<uint32_t>(samples.size() * 2);
+        const uint32_t riffSize = 36 + dataSize;
+        const uint16_t format = 1, channels = 1, bits = 16, align = 2;
+        const uint32_t sampleRate = rate, byteRate = rate * 2, fmtSize = 16;
+        file.write("RIFF", 4); file.write(reinterpret_cast<const char *>(&riffSize), 4);
+        file.write("WAVEfmt ", 8); file.write(reinterpret_cast<const char *>(&fmtSize), 4);
+        file.write(reinterpret_cast<const char *>(&format), 2); file.write(reinterpret_cast<const char *>(&channels), 2);
+        file.write(reinterpret_cast<const char *>(&sampleRate), 4); file.write(reinterpret_cast<const char *>(&byteRate), 4);
+        file.write(reinterpret_cast<const char *>(&align), 2); file.write(reinterpret_cast<const char *>(&bits), 2);
+        file.write("data", 4); file.write(reinterpret_cast<const char *>(&dataSize), 4);
+        file.write(reinterpret_cast<const char *>(samples.data()), dataSize);
+    }
 
     struct Loaded {
         Engine *engine = nullptr;
@@ -120,7 +198,8 @@ namespace {
             simulator->startFrame(frameDt);
             while (simulator->simulateStep()) { /* void */ }
             simulator->endFrame();
-            simulator->readAudioOutput(static_cast<int>(44100 * frameDt), audio.data());
+            if (g_renderAudio) collectAudio(simulator);
+            else simulator->readAudioOutput(static_cast<int>(44100 * frameDt), audio.data());
 
             const double dt = simulator->getFrameIterationCount() * simulator->getTimestep();
             t += dt;
@@ -148,10 +227,15 @@ int main(int argc, char *argv[]) {
         else if (arg == "--trace" && value) options.trace = std::atof(argv[++i]);
         else if (arg == "--anti-lag") options.antiLag = true;
         else if (arg == "--idle" && value) options.idle = std::atof(argv[++i]);
+        else if (arg == "--wav" && value) options.wav = argv[++i];
+        else if (arg == "--rev") options.rev = true;
+        else if (arg == "--perspective" && value) options.perspective = std::atoi(argv[++i]);
+        else if (arg == "--crackle" && value) options.crackle = static_cast<float>(std::atof(argv[++i]));
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--auto] [--preset economy|performance|race] [--tune <file>]\n"
-                "          [--shift <rpm>] [--launch <rpm>] [--anti-lag] [--time <s>] [--trace <s>] [--brake-at <s>] <script.mr>\n",
+                "          [--shift <rpm>] [--launch <rpm>] [--anti-lag] [--time <s>] [--trace <s>] [--brake-at <s>]\n"
+                "          [--wav <file>] [--rev] [--perspective 0|1|2] [--crackle <0-1>] <script.mr>\n",
                 argv[0]);
             return 0;
         }
@@ -172,10 +256,32 @@ int main(int argc, char *argv[]) {
     simulator->setSimulationFrequency(static_cast<int>(engine->getSimulationFrequency()));
 
     const int16_t unitImpulse = INT16_MAX;
+    g_renderAudio = !options.wav.empty();
     for (int i = 0; i < engine->getExhaustSystemCount(); ++i) {
-        simulator->synthesizer().initializeImpulseResponse(&unitImpulse, 1, 1.0f, i);
+        std::vector<int16_t> response;
+        ImpulseResponse *ir = engine->getExhaustSystem(i)->getImpulseResponse();
+        if (g_renderAudio && ir != nullptr && readWav16(ir->getFilename(), &response)) {
+            simulator->synthesizer().initializeImpulseResponse(
+                response.data(), static_cast<unsigned int>(response.size()), static_cast<float>(ir->getVolume()), i);
+        }
+        else {
+            simulator->synthesizer().initializeImpulseResponse(&unitImpulse, 1, 1.0f, i);
+        }
     }
-    simulator->startAudioRenderingThread();
+    if (g_renderAudio) {
+        // The application's initial sound settings for this engine
+        Synthesizer::AudioParameters audio = simulator->synthesizer().getAudioParameters();
+        audio.inputSampleNoise = static_cast<float>(engine->getInitialJitter());
+        audio.airNoise = static_cast<float>(engine->getInitialNoise());
+        audio.dF_F_mix = static_cast<float>(engine->getInitialHighFrequencyGain());
+        audio.convolution = static_cast<float>(engine->getInitialConvolution());
+        audio.perspective = options.perspective;
+        if (options.crackle >= 0) audio.overrunCrackle = options.crackle;
+        simulator->synthesizer().setAudioParameters(audio);
+    }
+    else {
+        simulator->startAudioRenderingThread();
+    }
 
     Ecu &ecu = simulator->getEcu();
     if (!options.preset.empty()) ecu.applyPreset(options.preset);
@@ -223,6 +329,52 @@ int main(int argc, char *argv[]) {
     std::fprintf(stderr, "%s: %.2f L, idle %.0f rpm, %s gearbox\n",
         engine->getName().c_str(), units::convert(engine->getDisplacement(), units::L),
         idleRpm, options.automatic ? "automatic" : "manual");
+
+    auto finish = [&](int code) {
+        if (g_renderAudio) {
+            writeWav16(options.wav, g_audio, 44100);
+            std::fprintf(stderr, "wrote %.1f s of sound to %s\n", g_audio.size() / 44100.0, options.wav.c_str());
+        }
+        simulator->endAudioRenderingThread();
+        simulator->releaseSimulation();
+        delete simulator;
+        engine->destroy();
+        delete engine;
+        delete loaded.vehicle;
+        delete loaded.transmission;
+        return code;
+    };
+
+    if (options.rev) {
+        // Free revving in neutral: blips, a pull against the limiter, lifts
+        // (overrun and blow-off), part throttle, idle. One line per 0.25 s:
+        // time, phase, rpm, throttle, boost
+        transmission->changeGear(-1);
+        struct Phase { const char *name; double throttle; double seconds; };
+        const double limiterHold = 2.5;
+        const Phase phases[] = {
+            { "idle", 0.0, 2.0 },
+            { "blip", 1.0, 0.25 }, { "lift", 0.0, 1.5 },
+            { "blip", 1.0, 0.4 }, { "lift", 0.0, 1.8 },
+            { "quarter", 0.25, 2.0 }, { "lift", 0.0, 1.5 },
+            { "half", 0.5, 2.0 }, { "lift", 0.0, 1.5 },
+            { "full", 1.0, limiterHold }, { "lift", 0.0, 3.0 },
+            { "idle", 0.0, 1.5 } };
+        double clock = 0, next = 0;
+        for (const Phase &phase : phases) {
+            engine->setSpeedControl(phase.throttle);
+            run(simulator, phase.seconds, [&](double dt) {
+                clock += dt;
+                if (options.trace > 0 && clock >= next) {
+                    next += options.trace;
+                    const ForcedInduction *fi = engine->getForcedInduction();
+                    std::printf("%.2f,%s,%.0f,%.2f,%.1f\n", clock, phase.name, engine->getRpm(), phase.throttle,
+                        fi != nullptr ? fi->getBoost() / 1000.0 : 0.0);
+                }
+            });
+        }
+        return finish(engine->getRpm() > 300 ? 0 : 1);
+    }
 
     // Launch: build revs against the launch limiter (or to 2/3 of the
     // shift speed) with the clutch out, then go
@@ -325,12 +477,5 @@ int main(int argc, char *argv[]) {
             engine->getRpm() > 300 ? "running" : "STALLED", engine->getRpm(), transmission->getGear() + 1);
     }
 
-    simulator->endAudioRenderingThread();
-    simulator->releaseSimulation();
-    delete simulator;
-    engine->destroy();
-    delete engine;
-    delete loaded.vehicle;
-    delete loaded.transmission;
-    return (t100 > 0) ? 0 : 1;
+    return finish((t100 > 0) ? 0 : 1);
 }

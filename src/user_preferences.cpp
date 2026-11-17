@@ -43,6 +43,13 @@ bool UserPreferences::load(const std::string &path) {
         else if (key == "temperature_units") temperatureUnits = value;
         else if (key == "master_volume") masterVolume = std::clamp((float)std::atof(value.c_str()), 0.0f, 1.0f);
         else if (key == "mute_when_inactive") muteWhenInactive = parseBool(value);
+        else if (key == "listener_position") listenerPosition = std::clamp(std::atoi(value.c_str()), 0, 2);
+        else if (key == "intake_volume") intakeVolume = std::clamp((float)std::atof(value.c_str()), 0.0f, 2.0f);
+        else if (key == "mechanical_volume") mechanicalVolume = std::clamp((float)std::atof(value.c_str()), 0.0f, 2.0f);
+        else if (key == "overrun_crackle") overrunCrackle = std::clamp((float)std::atof(value.c_str()), 0.0f, 1.0f);
+        else if (key == "pedal_response") {
+            if (value == "progressive" || value == "gentle" || value == "linear" || value == "sport" || value == "direct") pedalResponse = value;
+        }
         else if (key == "simulation_frequency") simulationFrequency = std::max(0, std::atoi(value.c_str()));
         else if (key == "fluid_simulation_steps") fluidSimulationSteps = std::max(0, std::atoi(value.c_str()));
         else if (key == "target_audio_latency") targetAudioLatency = std::clamp((float)std::atof(value.c_str()), 0.02f, 0.5f);
@@ -72,6 +79,11 @@ bool UserPreferences::save(const std::string &path) const {
         << "pressure_units=" << pressureUnits << "\n"
         << "temperature_units=" << temperatureUnits << "\n"
         << "master_volume=" << masterVolume << "\n"
+        << "listener_position=" << listenerPosition << "\n"
+        << "intake_volume=" << intakeVolume << "\n"
+        << "mechanical_volume=" << mechanicalVolume << "\n"
+        << "overrun_crackle=" << overrunCrackle << "\n"
+        << "pedal_response=" << pedalResponse << "\n"
         << "mute_when_inactive=" << (muteWhenInactive ? 1 : 0) << "\n"
         << "simulation_frequency=" << simulationFrequency << "\n"
         << "fluid_simulation_steps=" << fluidSimulationSteps << "\n"
