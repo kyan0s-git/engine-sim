@@ -2908,6 +2908,12 @@ void AppUi::buildDesignerWindow() {
             ImGui::Checkbox("##engineering", &d.engineering);
             ui::HelpMarker("Real-gas thermodynamics, flame propagation, heat transfer and friction models. "
                 "Slower than the legacy model.");
+            if (d.engineering) {
+                label("Friction");
+                sliderDouble("##friction", &d.frictionMultiplier, 0.2, 2.0, "%.2fx");
+                ui::HelpMarker("Scales the friction model: racing engines (low-tension rings, roller bearings, "
+                    "dry sumps) run around 0.5x, worn or heavy-duty engines above 1x.");
+            }
             label("Fuel");
             const char *fuels[] = { "gasoline", "e85", "ethanol", "methanol", "iso-octane", "propane", "methane", "hydrogen" };
             int fuel = 0;

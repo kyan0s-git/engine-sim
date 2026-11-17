@@ -52,10 +52,23 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   exhaust muffled and booming through the cabin, the intake and engine
   through the firewall) or the engine bay. K cycles through them.
 - Turbocharger whistle: it reached only a sixth of its level on full
-  boost and was masked by the exhaust; it now rises clearly with the
-  shaft speed.
+  boost and was masked by the exhaust, and was close to a pure tone. It
+  is now mostly rushing air in a narrow band at the whistle pitch, with a
+  faint drifting tone, pulsing with the exhaust and rising with the shaft
+  speed.
 - `engine-sim-drive --wav <file>` renders the sound offline; `--rev`
   free-revs the engine; `--perspective` and `--crackle` set the sound.
+
+### Engine library
+- 14 more engines: Ferrari F106 V8 (flat-plane crank), BMW S70/2 V12
+  (McLaren F1), Nissan RB26DETT, Honda F20C, Lexus 1LR-GUE V10, Ford
+  Coyote 5.0, Ferrari F140 V12, Bugatti W16, Mazda 26B four-rotor, Audi
+  2.5 TFSI five, Cosworth DFV, Toyota 4A-GE, Subaru EJ257 and Volkswagen
+  VR6. Checked on the dyno against their published power (most within
+  10 %; the DFV makes about 390 hp of its 480, as the combustion model
+  slows above 10,000 rpm).
+- Designer: a friction setting for the engineering model (racing engines
+  run around 0.5x).
 
 ### Fixes
 - After revving in neutral the engine hung at about 4000 rpm instead of

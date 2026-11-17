@@ -145,6 +145,7 @@ namespace {
             { "whistle_pitch", exact(d.whistlePitch) },
             { "drivetrain", d.drivetrain },
             { "tire_friction", exact(d.tireFriction) },
+            { "friction_multiplier", exact(d.frictionMultiplier) },
             { "idle_advance", exact(d.idleAdvance) },
             { "max_advance", exact(d.maxAdvance) },
             { "max_advance_rpm", exact(d.maxAdvanceRpm) },
@@ -667,6 +668,7 @@ bool EngineDesign::validate() {
     whistlePitch = std::clamp(whistlePitch, 0.25, 4.0);
     if (drivetrain != "fwd" && drivetrain != "awd") drivetrain = "rwd";
     tireFriction = std::clamp(tireFriction, 0.3, 2.0);
+    frictionMultiplier = std::clamp(frictionMultiplier, 0.2, 3.0);
 
     idleAdvance = std::clamp(idleAdvance, 0.0, 40 * Deg);
     maxAdvance = std::clamp(maxAdvance, idleAdvance, 60 * Deg);
@@ -873,6 +875,7 @@ std::string generateEngineScript(const EngineDesign &design_) {
       << "        dyno_max_speed: " << num(d.redline) << " * units.rpm,\n"
       << "        physics_model: \"" << (d.engineering ? "engineering" : "legacy") << "\",\n"
       << "        valvetrain_type: \"" << d.valvetrain << "\",\n"
+      << "        friction_multiplier: " << num(d.frictionMultiplier) << ",\n"
       << "        valves_per_cylinder: " << d.valvesPerCylinder << ",\n"
       << "        max_valve_lift: " << num(d.intakeLift * 1000) << " * units.mm,\n"
       << "        simulation_frequency: " << simulationFrequency(d) << ",\n"
@@ -1134,6 +1137,7 @@ bool readEngineDesign(const std::string &scriptText, EngineDesign *design) {
     number("whistle_pitch", &d.whistlePitch);
     text("drivetrain", &d.drivetrain);
     number("tire_friction", &d.tireFriction);
+    number("friction_multiplier", &d.frictionMultiplier);
     number("idle_advance", &d.idleAdvance);
     number("max_advance", &d.maxAdvance);
     number("max_advance_rpm", &d.maxAdvanceRpm);

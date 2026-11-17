@@ -110,6 +110,7 @@ struct EngineDesign {
 
     // Physics
     bool engineering = true;
+    double frictionMultiplier = 1.0;            // engineering model friction (racing engines run below 1)
     std::string fuel = "gasoline";
     double lambda = 1.0;
 

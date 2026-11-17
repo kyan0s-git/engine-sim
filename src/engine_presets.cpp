@@ -355,7 +355,7 @@ namespace {
             timing(d, 10, 26, 4500);
             d.redline = 8000;
             d.induction = EngineDesign::Induction::TwinTurbo;
-            d.boost = 10 * psi;
+            d.boost = 14 * psi;
             d.turbineAr = 0.64;
             d.intercoolerEffectiveness = 0.7;
             d.runnerLength = 0.25; d.primaryLength = 0.35;
@@ -473,7 +473,7 @@ namespace {
             timing(d, 10, 26, 4000);
             d.redline = 6500;
             d.induction = EngineDesign::Induction::TwinTurbo;
-            d.boost = 18 * psi;
+            d.boost = 13 * psi;
             d.turbineAr = 0.7;
             d.intercoolerEffectiveness = 0.85;
             d.runnerLength = 0.3; d.primaryLength = 0.35;
@@ -524,7 +524,7 @@ namespace {
             timing(d, 10, 26, 4000);
             d.redline = 7000;
             d.induction = EngineDesign::Induction::Turbo;
-            d.boost = 20 * psi;
+            d.boost = 17.5 * psi;
             d.turbineAr = 0.7;
             d.intercoolerEffectiveness = 0.8;
             d.runnerLength = 0.25; d.primaryLength = 0.3;
@@ -547,12 +547,15 @@ namespace {
             d.bore = 85.7 * mm; d.stroke = 64.8 * mm; d.rodLength = 135 * mm;
             d.compressionRatio = 12.0;
             d.valvesPerCylinder = 4;
-            cams(d, 290, 280, 11.5, 10.5, 104, 108);
+            cams(d, 310, 300, 13.5, 12.5, 104, 106);
             timing(d, 15, 36, 8000);
             d.redline = 11000;
-            d.runnerLength = 0.2; d.primaryLength = 0.65;
+            d.runnerLength = 0.16; d.primaryLength = 0.55;
             d.exhaustLength = 0.9; d.exhaustDiameter = 60 * mm;
             d.flywheelMass = 2.5;
+            // Racing internals: low-tension rings, roller bearings for the
+            // pumps, a dry sump
+            d.frictionMultiplier = 0.4;
             d.lambda = 0.88;
             d.exhaustSound = "minimal_muffling_03";
             d.vehicleMass = 600;
@@ -595,7 +598,7 @@ namespace {
             timing(d, 10, 24, 4000);
             d.redline = 7000;
             d.induction = EngineDesign::Induction::Turbo;
-            d.boost = 14.5 * psi;
+            d.boost = 16.5 * psi;
             d.turbineAr = 0.6;
             d.intercoolerEffectiveness = 0.7;
             d.runnerLength = 0.25; d.primaryLength = 0.5;
@@ -618,11 +621,12 @@ namespace {
             d.bore = 81 * mm; d.stroke = 90.3 * mm; d.rodLength = 164 * mm;
             d.compressionRatio = 10.0;
             d.valvesPerCylinder = 2;
-            cams(d, 210, 210, 10.0, 9.5, 112, 114);
+            cams(d, 196, 196, 8.5, 8.0, 114, 116);
             timing(d, 10, 30, 4000);
             d.redline = 6500;
             d.runnerLength = 0.4; d.primaryLength = 0.4;
             d.exhaustLength = 3.0; d.exhaustDiameter = 60 * mm;
+            d.throttleFlow = 260;
             d.flywheelMass = 9;
             d.lambda = 0.95;
             d.exhaustSound = "mild_exhaust_0";
