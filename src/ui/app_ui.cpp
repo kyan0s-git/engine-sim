@@ -2182,7 +2182,7 @@ void AppUi::buildSettingsWindow() {
             label("Listening from");
             const char *positions[] = { "Outside, behind the car", "The driver's seat", "The engine bay" };
             if (ImGui::Combo("##listener", &p.listenerPosition, positions, 3)) changed = true;
-            ImGui::SameLine(); ui::HelpMarker("Outside the exhaust dominates; in the cockpit it is muffled and booms "
+            ui::HelpMarker("Outside the exhaust dominates; in the cockpit it is muffled and booms "
                 "while the intake and the engine come through the firewall; by the engine the intake, valvetrain "
                 "and turbo or supercharger are loudest. [K] cycles through them.");
             label("Intake roar");
@@ -2651,7 +2651,7 @@ void AppUi::buildDesignerWindow() {
                 sliderDouble("##ecc", &d.eccentricity, 0.008, 0.025, "%.1f mm", 1000.0);
                 label("Generating radius");
                 sliderDouble("##genr", &d.generatingRadius, 5.0 * d.eccentricity, 10.0 * d.eccentricity, "%.1f mm", 1000.0);
-                ImGui::SameLine(); ui::HelpMarker("Rotor center to apex. R / e between 6.5 and 7.5 is typical.");
+                ui::HelpMarker("Rotor center to apex. R / e between 6.5 and 7.5 is typical.");
                 label("Rotor width");
                 sliderDouble("##rwidth", &d.rotorWidth, 0.03, 0.12, "%.1f mm", 1000.0);
             }
@@ -2819,36 +2819,36 @@ void AppUi::buildDesignerWindow() {
                 label(d.isTurbocharged() ? "Boost (wastegate)" : "Target boost");
                 sliderDouble("##boost", &d.boost, 0.2e5, 3.5e5, imperial ? "%.1f psi" : "%.2f bar", 1.0 / unit);
                 if (!d.isTurbocharged()) {
-                    ImGui::SameLine(); ui::HelpMarker("Superchargers have no wastegate: the drive ratio and the "
+                    ui::HelpMarker("Superchargers have no wastegate: the drive ratio and the "
                         "compressor size are chosen for about this boost near the redline.");
                 }
 
                 label("Compressor size");
                 sliderDouble("##scale", &d.compressorScale, 0.5, 2.0, "%.2fx");
-                ImGui::SameLine(); ui::HelpMarker("Relative to a compressor sized for the boost at the redline. "
+                ui::HelpMarker("Relative to a compressor sized for the boost at the redline. "
                     "Larger compressors flow more but spool later.");
 
                 if (d.isTurbocharged()) {
                     label("Turbine housing A/R");
                     sliderDouble("##ar", &d.turbineAr, 0.35, 1.4, "%.2f");
-                    ImGui::SameLine(); ui::HelpMarker("Smaller housings spool sooner but restrict the exhaust at high speed.");
+                    ui::HelpMarker("Smaller housings spool sooner but restrict the exhaust at high speed.");
                     label("Ball bearings");
                     ImGui::Checkbox("##ball", &d.ballBearings);
                     label("Twin-scroll turbine");
                     ImGui::Checkbox("##twinscroll", &d.twinScroll);
-                    ImGui::SameLine(); ui::HelpMarker("Keeps the exhaust pulses of different cylinders apart: "
+                    ui::HelpMarker("Keeps the exhaust pulses of different cylinders apart: "
                         "more turbine energy at low flow, so it spools sooner.");
 
                     label("Boost control");
                     int control = (d.boostControl == "spring") ? 1 : 0;
                     const char *controls[] = { "Electronic (boost controller)", "Wastegate spring only" };
                     if (ImGui::Combo("##boostcontrol", &control, controls, 2)) d.boostControl = control ? "spring" : "electronic";
-                    ImGui::SameLine(); ui::HelpMarker("A spring-only wastegate starts to open early and lets the boost "
+                    ui::HelpMarker("A spring-only wastegate starts to open early and lets the boost "
                         "creep; a boost controller holds the target closely.");
 
                     label("External wastegate");
                     ImGui::Checkbox("##extwg", &d.externalWastegate);
-                    ImGui::SameLine(); ui::HelpMarker("A larger, separate wastegate: better boost control at high flow "
+                    ui::HelpMarker("A larger, separate wastegate: better boost control at high flow "
                         "and its own screamer-pipe sound.");
                 }
                 else {
@@ -2906,7 +2906,6 @@ void AppUi::buildDesignerWindow() {
             ImGui::SeparatorText("Physics");
             label("Engineering model");
             ImGui::Checkbox("##engineering", &d.engineering);
-            ImGui::SameLine();
             ui::HelpMarker("Real-gas thermodynamics, flame propagation, heat transfer and friction models. "
                 "Slower than the legacy model.");
             label("Fuel");
@@ -2931,7 +2930,7 @@ void AppUi::buildDesignerWindow() {
                 int tire = 0;
                 for (int i = 1; i < 4; ++i) if (std::abs(d.tireFriction - grip[i]) < std::abs(d.tireFriction - grip[tire])) tire = i;
                 if (ImGui::Combo("##tires", &tire, tires, 4)) d.tireFriction = grip[tire];
-                ImGui::SameLine(); ui::HelpMarker("Grip limits how much torque the driven wheels can take before they spin.");
+                ui::HelpMarker("Grip limits how much torque the driven wheels can take before they spin.");
             }
             ImGui::EndTabItem();
         }

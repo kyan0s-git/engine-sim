@@ -5,6 +5,8 @@
 #include <assert.h>
 
 ysErrorSystem *ysErrorSystem::g_instance = nullptr;
+thread_local int ysErrorSystem::s_stackLevel = 0;
+thread_local const char *ysErrorSystem::s_callStack[ysErrorSystem::MAX_STACK_LEVEL] = {};
 
 ysErrorSystem::ysErrorSystem() {
     if (g_instance != nullptr) {
@@ -12,9 +14,6 @@ ysErrorSystem::ysErrorSystem() {
     }
 
     g_instance = this;
-
-    memset((void *)m_callStack, 0, sizeof(m_callStack));
-    m_stackLevel = 0;
 }
 
 ysErrorSystem::~ysErrorSystem() {
@@ -27,7 +26,8 @@ ysErrorSystem *ysErrorSystem::GetInstance() {
 }
 
 void ysErrorSystem::Destroy() {
-    delete [] g_instance;
+    delete g_instance;      // was delete[] on a single object
+    g_instance = nullptr;
 }
 
 ysError ysErrorSystem::RaiseError(ysError error, unsigned int line, ysObject *object, const char *file, const char *msg, bool affectStack) {
@@ -41,18 +41,16 @@ ysError ysErrorSystem::RaiseError(ysError error, unsigned int line, ysObject *ob
         StackDescend();
     }
 
-    assert(m_stackLevel >= 0);
-
     return error;
 }
 
 void ysErrorSystem::StackRaise(const char *callName) {
-    assert(m_stackLevel >= 0);
-
-    m_callStack[m_stackLevel] = callName;
-    m_stackLevel++;
+    if (s_stackLevel >= 0 && s_stackLevel < MAX_STACK_LEVEL) {
+        s_callStack[s_stackLevel] = callName;
+    }
+    s_stackLevel++;
 }
 
 void ysErrorSystem::StackDescend() {
-    --m_stackLevel;
+    if (s_stackLevel > 0) --s_stackLevel;
 }

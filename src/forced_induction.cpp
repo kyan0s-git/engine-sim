@@ -511,10 +511,13 @@ double ForcedInduction::getWhineLevel() const {
         return speed * (0.3 + 0.7 * load);
     }
 
-    const double s = clamp(m_units[0].omega / m_maxSpeed, 0.0, 1.0);
+    // Relative to a typical operating speed (about 45 % of the compressor's
+    // tip speed limit, where the boost builds); relative to the limit the
+    // whistle stayed at a sixth of its level on full boost
+    const double s = clamp(m_units[0].omega / (0.45 * m_maxSpeed), 0.0, 1.0);
     const double flow = clamp(
         std::abs(getCompressorFlow()) * units::AirMolecularMass / 0.3, 0.0, 1.0);
-    return s * s * (0.25 + 0.75 * flow);
+    return s * std::sqrt(s) * (0.3 + 0.7 * flow);
 }
 
 double ForcedInduction::getFlowLevel() const {

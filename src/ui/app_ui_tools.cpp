@@ -741,6 +741,31 @@ void AppUi::buildEcuWindow() {
             ImGui::EndTabItem();
         }
 
+        if (ImGui::BeginTabItem("Pedal")) {
+            ImGui::Checkbox("Drive by wire", &st.pedalControl);
+            ui::HelpMarker("On: the pedal asks for a share of the torque and the ECU opens the throttle as far as "
+                "that takes at the current engine speed. Off: the pedal moves the throttle plate directly, "
+                "which delivers most of the torque in the first fifth of its travel.");
+            ImGui::SameLine(0, 20 * s);
+            if (state.throttleCommand >= 0) {
+                ImGui::TextDisabled("pedal %.0f %%   throttle %.1f %%", state.pedal * 100, state.throttleCommand * 100);
+            }
+            else {
+                ImGui::TextDisabled("pedal %.0f %%", state.pedal * 100);
+            }
+            const char *curves[] = { "Gentle", "Progressive", "Linear", "Sport" };
+            const char *curveKeys[] = { "gentle", "progressive", "linear", "sport" };
+            for (int i = 0; i < 4; ++i) {
+                if (i > 0) ImGui::SameLine();
+                if (ImGui::SmallButton(curves[i])) Ecu::setPedalCurve(&st.pedal, curveKeys[i]);
+            }
+            ImGui::TextDisabled("Torque share [%%] over pedal travel [%%]");
+            if (st.pedal.cols() >= 2) {
+                buildMapEditor(st.pedal, const_cast<EcuTable *>(&stock.pedal), 200 * s, state.pedal * 100, 0, 0, 100, 1, "%.1f");
+            }
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 

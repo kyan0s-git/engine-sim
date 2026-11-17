@@ -368,8 +368,9 @@ int main(int argc, char *argv[]) {
                 if (options.trace > 0 && clock >= next) {
                     next += options.trace;
                     const ForcedInduction *fi = engine->getForcedInduction();
-                    std::printf("%.2f,%s,%.0f,%.2f,%.1f\n", clock, phase.name, engine->getRpm(), phase.throttle,
-                        fi != nullptr ? fi->getBoost() / 1000.0 : 0.0);
+                    std::printf("%.2f,%s,%.0f,%.2f,%.1f,%.0f\n", clock, phase.name, engine->getRpm(), phase.throttle,
+                        fi != nullptr ? fi->getBoost() / 1000.0 : 0.0,
+                        fi != nullptr ? fi->getShaftSpeed() * 60.0 / (2 * 3.14159265358979) : 0.0);
                 }
             });
         }

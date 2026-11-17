@@ -286,7 +286,7 @@ namespace {
         // leakage and the hotter charge
         const bool roots = (d.induction == EngineDesign::Induction::Roots);
         const double ratio = (d.driveRatio > 0) ? d.driveRatio : 2.2;
-        const double margin = roots ? 1.45 : 1.2;
+        const double margin = roots ? 1.25 : 1.2;
         const double displacement = crankRevFlow * pr * margin / ratio * d.compressorScale;
 
         s << "    engine.add_forced_induction(\n"

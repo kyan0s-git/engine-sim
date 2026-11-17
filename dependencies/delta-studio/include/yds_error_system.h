@@ -24,7 +24,9 @@ public:
     void StackRaise(const char *callName);
     void StackDescend();
 
-    const char *GetCall() const { return (m_stackLevel > 0) ? m_callStack[m_stackLevel - 1] : "<NO CALL>"; }
+    const char *GetCall() const {
+        return (s_stackLevel > 0 && s_stackLevel <= MAX_STACK_LEVEL) ? s_callStack[s_stackLevel - 1] : "<NO CALL>";
+    }
 
     template<typename T_ErrorHandler>
     ysError AttachErrorHandler(T_ErrorHandler **handler) {
@@ -41,8 +43,11 @@ public:
 protected:
     ysDynamicArray<ysErrorHandler, 4> m_errorHandlers;
 
-    int m_stackLevel;
-    const char *m_callStack[MAX_STACK_LEVEL];
+    // Each thread has its own call stack: the audio is written from the
+    // simulation thread while the main thread renders, and a shared stack
+    // lost increments and decrements until its level ran outside the array
+    static thread_local int s_stackLevel;
+    static thread_local const char *s_callStack[MAX_STACK_LEVEL];
 };
 
 #define _YDS_WIDE(_String) L ## _String

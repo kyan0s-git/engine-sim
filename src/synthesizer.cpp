@@ -612,7 +612,10 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
         // Filter centres follow the shaft speed; updated every 32 samples
         float tonal = 0;
         if (type == 1 || type == 4) {
-            const float pitch = std::clamp(400.0f + ((type == 1) ? 2.4f : 2.0f) * shaft, 300.0f, 9000.0f);
+            // Spool whistle: from below 1 kHz at idle to 4-6 kHz on boost,
+            // where it stands clear of the exhaust (it was masked by the
+            // exhaust's own noise under load)
+            const float pitch = std::clamp(500.0f + ((type == 1) ? 3.0f : 2.4f) * shaft, 400.0f, 9000.0f);
             if ((m_fiCounter++ & 31) == 0) {
                 m_whistleBand.set(pitch, 18.0f, fs);
                 m_whooshBand.set(500.0f + 0.35f * pitch, 0.9f, fs);
@@ -626,8 +629,8 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
 
             const float tone = static_cast<float>(std::sin(m_whinePhase));
             const float air = 5.0f * m_whistleBand.process(noise());
-            const float toneShare = (type == 4) ? 0.65f : 0.45f;
-            tonal += whine * (toneShare * tone + (1.0f - toneShare) * air);
+            const float toneShare = (type == 4) ? 0.75f : 0.7f;
+            tonal += 1.4f * whine * (toneShare * tone + (1.0f - toneShare) * air);
             tonal += 0.45f * flow * flow * m_whooshBand.process(noise());
         }
         else {
