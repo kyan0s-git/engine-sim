@@ -37,7 +37,6 @@ Synthesizer::Synthesizer() {
     m_noiseState = 0x9E3779B9u;
 
     m_whinePhase = 0;
-    m_vibratoPhase = 0;
     m_flutterPhase = 0;
     m_fiCounter = 0;
     m_mixEnvelope = 0;
@@ -118,6 +117,8 @@ void Synthesizer::initialize(const Parameters &p) {
     m_intakeSnorkel.set(560.0f, 2.2f, fs);
     m_intakeRoar.set(1700.0f, 0.7f, fs);
     m_valveBand.set(3800.0f, 1.3f, fs);
+    m_whistleDrift.set(3.0f, fs);
+    m_whistlePulse.set(600.0f, fs);
     m_raspBand.set(2400.0f, 0.6f, fs);
     m_cabinBoom.set(95.0f, 1.3f, fs);
     m_cabinLow1.set(1500.0f, fs);
@@ -612,25 +613,40 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
         // Filter centres follow the shaft speed; updated every 32 samples
         float tonal = 0;
         if (type == 1 || type == 4) {
-            // Spool whistle: from below 1 kHz at idle to 4-6 kHz on boost,
-            // where it stands clear of the exhaust (it was masked by the
-            // exhaust's own noise under load)
+            // Spool whistle: from below 1 kHz at idle to 4-6 kHz on boost.
+            // A real one is mostly air: a narrow band of rushing noise at
+            // the whistle pitch (two resonances in series, like blowing
+            // across a bottle) with a weaker band 1.5 times higher from the
+            // inducer, and only a faint tone whose pitch wanders. A turbo's
+            // turbine is driven by the exhaust pulses, so it pulses with
+            // the engine; a centrifugal supercharger doesn't.
             const float pitch = std::clamp(500.0f + ((type == 1) ? 3.0f : 2.4f) * shaft, 400.0f, 9000.0f);
-            if ((m_fiCounter++ & 31) == 0) {
-                m_whistleBand.set(pitch, 18.0f, fs);
+            if ((m_fiCounter++ & 15) == 0) {
+                m_whistleBand.set(pitch, 11.0f, fs);
+                m_whistleBand2.set(pitch, 11.0f, fs);
+                m_inducerBand.set(1.5f * pitch, 14.0f, fs);
                 m_whooshBand.set(500.0f + 0.35f * pitch, 0.9f, fs);
             }
 
-            // A slightly wavering tone inside a narrow band of air noise
-            m_vibratoPhase += twoPi * 5.3 / fs;
-            if (m_vibratoPhase > twoPi) m_vibratoPhase -= twoPi;
-            m_whinePhase += twoPi * pitch * (1.0 + 0.003 * std::sin(m_vibratoPhase)) / fs;
-            if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
+            const float air = m_whistleBand2.process(m_whistleBand.process(noise()))
+                + 0.35f * m_inducerBand.process(noise());
+            m_whistleRms += (air * air - m_whistleRms) * (1.0f / (0.05f * fs));
+            const float airNormalized = air / std::sqrt(std::max(m_whistleRms, 1e-12f)) * 0.7f;
 
+            // The tone's pitch drifts by about half a percent
+            const float drift = m_whistleDrift.process(noise());
+            m_whinePhase += twoPi * pitch * (1.0 + 0.6 * drift) / fs;
+            if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
             const float tone = static_cast<float>(std::sin(m_whinePhase));
-            const float air = 5.0f * m_whistleBand.process(noise());
-            const float toneShare = (type == 4) ? 0.75f : 0.7f;
-            tonal += 1.4f * whine * (toneShare * tone + (1.0f - toneShare) * air);
+
+            // Pulsing with the exhaust (turbochargers only)
+            float pulse = 1.0f;
+            if (type == 1) {
+                const float ratio = std::clamp(std::abs(m_mixBuffer[j]) / std::max(envelope, 1e-6f), 0.0f, 3.0f);
+                pulse = 0.55f + 0.45f * m_whistlePulse.process(ratio);
+            }
+
+            tonal += 1.6f * whine * pulse * (0.75f * airNormalized + 0.25f * tone);
             tonal += 0.45f * flow * flow * m_whooshBand.process(noise());
         }
         else {

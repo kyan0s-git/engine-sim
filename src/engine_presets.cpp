@@ -293,6 +293,345 @@ namespace {
             presets.push_back(d);
         }
 
+        // More iconic engines ------------------------------------------------
+
+        {
+            EngineDesign d = base("Ferrari F106 V8",
+                "2.9 L flat-plane V8 of the 308 GTB Quattrovalvole (F106 family), about 240 hp at 7000 rpm.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 8;
+            d.bankAngle = 90 * Deg;
+            // Flat-plane crank: the firing alternates between the banks, so
+            // each bank's exhaust pulses are evenly spaced (the shriek)
+            d.firingOrderText = "1-5-3-7-4-8-2-6";
+            d.bore = 81 * mm; d.stroke = 71 * mm; d.rodLength = 120 * mm;
+            d.compressionRatio = 9.2;
+            d.valvesPerCylinder = 4;
+            cams(d, 236, 232, 9.5, 9.0, 108, 112);
+            timing(d, 12, 34, 5000);
+            d.redline = 7700;
+            d.runnerLength = 0.28; d.primaryLength = 0.6;
+            d.exhaustLength = 2.4; d.exhaustDiameter = 60 * mm;
+            d.flywheelMass = 7;
+            d.lambda = 0.92;
+            d.exhaustSound = "sharp_0";
+            d.vehicleMass = 1300;
+            d.idleThrottle = 0.995;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("BMW S70/2 V12",
+                "6.1 L 60 degree V12 of the McLaren F1, about 620 hp at 7400 rpm.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 12;
+            d.bankAngle = 60 * Deg;
+            d.bore = 86 * mm; d.stroke = 87 * mm; d.rodLength = 140 * mm;
+            d.compressionRatio = 11.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 250, 246, 11.5, 10.5, 106, 110);
+            timing(d, 12, 34, 5000);
+            d.redline = 7500;
+            d.runnerLength = 0.3; d.primaryLength = 0.6;
+            d.exhaustLength = 2.0; d.exhaustDiameter = 76 * mm;
+            d.flywheelMass = 8;
+            d.lambda = 0.9;
+            d.exhaustSound = "minimal_muffling_01";
+            d.vehicleMass = 1140;
+            d.idleThrottle = 0.995;
+            d.tireFriction = 1.3;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Nissan RB26DETT",
+                "2.6 L inline six with twin turbochargers (Skyline GT-R R32-R34), about 320 hp at 6800 rpm.");
+            d.layout = EngineDesign::Layout::Inline;
+            d.cylinders = 6;
+            d.bore = 86 * mm; d.stroke = 73.7 * mm; d.rodLength = 121.5 * mm;
+            d.compressionRatio = 8.5;
+            d.valvesPerCylinder = 4;
+            cams(d, 240, 236, 8.6, 8.4, 112, 114);
+            timing(d, 10, 26, 4500);
+            d.redline = 8000;
+            d.induction = EngineDesign::Induction::TwinTurbo;
+            d.boost = 10 * psi;
+            d.turbineAr = 0.64;
+            d.intercoolerEffectiveness = 0.7;
+            d.runnerLength = 0.25; d.primaryLength = 0.35;
+            d.exhaustLength = 2.8; d.exhaustDiameter = 76 * mm;
+            d.flywheelMass = 8;
+            d.lambda = 0.85;
+            d.exhaustSound = "minimal_muffling_02";
+            d.vehicleMass = 1540;
+            d.drivetrain = "awd";
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Honda F20C",
+                "2.0 L VTEC inline four of the S2000, about 240 hp at 8300 rpm and a 9000 rpm redline.");
+            d.layout = EngineDesign::Layout::Inline;
+            d.cylinders = 4;
+            d.bore = 87 * mm; d.stroke = 84 * mm; d.rodLength = 153 * mm;
+            d.compressionRatio = 11.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 252, 244, 11.5, 10.6, 108, 112);
+            timing(d, 12, 36, 6000);
+            d.redline = 9000;
+            d.runnerLength = 0.3; d.primaryLength = 0.5;
+            d.exhaustLength = 2.4; d.exhaustDiameter = 60 * mm;
+            d.flywheelMass = 6;
+            d.lambda = 0.92;
+            d.exhaustSound = "sharp_0";
+            d.vehicleMass = 1260;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Lexus 1LR-GUE V10",
+                "4.8 L 72 degree V10 of the LFA, about 550 hp at 8700 rpm, revving to 9000 rpm.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 10;
+            d.bankAngle = 72 * Deg;
+            d.bore = 88 * mm; d.stroke = 79 * mm; d.rodLength = 128 * mm;
+            d.compressionRatio = 12.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 260, 252, 12.0, 11.0, 104, 108);
+            timing(d, 12, 36, 6500);
+            d.redline = 9000;
+            d.runnerLength = 0.28; d.primaryLength = 0.6;
+            d.exhaustLength = 2.0; d.exhaustDiameter = 70 * mm;
+            d.flywheelMass = 5;
+            d.lambda = 0.9;
+            d.exhaustSound = "minimal_muffling_03";
+            d.vehicleMass = 1480;
+            d.idleThrottle = 0.995;
+            d.tireFriction = 1.3;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Ford Coyote 5.0 V8",
+                "5.0 L DOHC cross-plane V8 (Mustang GT, third generation), about 460 hp at 7000 rpm.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 8;
+            d.bankAngle = 90 * Deg;
+            // Ford 1-5-4-8-6-3-7-2 (1-4 on the right bank, 5-8 on the left)
+            d.firingOrderText = "1-5-4-8-6-3-7-2";
+            d.bore = 93 * mm; d.stroke = 92.7 * mm; d.rodLength = 150.7 * mm;
+            d.compressionRatio = 12.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 236, 232, 12.0, 11.0, 110, 114);
+            timing(d, 14, 30, 4500);
+            d.redline = 7500;
+            d.runnerLength = 0.3; d.primaryLength = 0.7;
+            d.exhaustLength = 3.2; d.exhaustDiameter = 70 * mm;
+            d.flywheelMass = 11;
+            d.lambda = 0.92;
+            d.exhaustSound = "mild_exhaust_0";
+            d.vehicleMass = 1750;
+            d.idleThrottle = 0.995;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Ferrari F140 V12",
+                "6.5 L 65 degree V12 of the 812 Superfast, about 790 hp at 8500 rpm.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 12;
+            d.bankAngle = 65 * Deg;
+            d.bore = 94 * mm; d.stroke = 78 * mm; d.rodLength = 135 * mm;
+            d.compressionRatio = 13.6;
+            d.valvesPerCylinder = 4;
+            cams(d, 264, 256, 12.5, 11.5, 104, 108);
+            timing(d, 12, 36, 6500);
+            d.redline = 8900;
+            d.runnerLength = 0.28; d.primaryLength = 0.6;
+            d.exhaustLength = 2.2; d.exhaustDiameter = 80 * mm;
+            d.flywheelMass = 6;
+            d.lambda = 0.9;
+            d.exhaustSound = "sharp_0";
+            d.vehicleMass = 1630;
+            d.idleThrottle = 0.995;
+            d.tireFriction = 1.3;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Bugatti W16",
+                "8.0 L W16 with four turbochargers (Veyron), about 1000 hp at 6000 rpm.");
+            d.layout = EngineDesign::Layout::W;
+            d.wBanks = 4;
+            d.cylinders = 16;
+            d.bankAngle = 90 * Deg;
+            d.vrAngle = 15 * Deg;
+            d.bore = 86 * mm; d.stroke = 86 * mm; d.rodLength = 155 * mm;
+            d.compressionRatio = 9.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 224, 220, 10.0, 9.5, 112, 112);
+            timing(d, 10, 26, 4000);
+            d.redline = 6500;
+            d.induction = EngineDesign::Induction::TwinTurbo;
+            d.boost = 18 * psi;
+            d.turbineAr = 0.7;
+            d.intercoolerEffectiveness = 0.85;
+            d.runnerLength = 0.3; d.primaryLength = 0.35;
+            d.exhaustLength = 2.5; d.exhaustDiameter = 90 * mm;
+            d.flywheelMass = 12;
+            d.lambda = 0.85;
+            d.exhaustSound = "mild_exhaust_0_reverb";
+            d.vehicleMass = 1890;
+            d.idleThrottle = 0.995;
+            d.drivetrain = "awd";
+            d.tireFriction = 1.3;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Mazda 26B",
+                "2.6 L four-rotor Wankel of the 787B that won Le Mans in 1991, about 700 hp at 9000 rpm.");
+            d.layout = EngineDesign::Layout::Rotary;
+            d.rotors = 4;
+            d.eccentricity = 15 * mm; d.generatingRadius = 105 * mm; d.rotorWidth = 80 * mm;
+            d.compressionRatio = 10.0;
+            d.intakeOpen = 20 * Deg; d.intakeClose = 100 * Deg;
+            d.exhaustOpen = 85 * Deg; d.exhaustClose = 20 * Deg;
+            timing(d, 5, 28, 6000);
+            d.redline = 9000;
+            d.runnerLength = 0.35; d.primaryLength = 0.3;
+            d.exhaustLength = 1.5; d.exhaustDiameter = 90 * mm;
+            d.flywheelMass = 5;
+            d.lambda = 0.88;
+            d.engineering = false;
+            d.exhaustSound = "minimal_muffling_03";
+            d.vehicleMass = 830;
+            d.idleThrottle = 0.9965;
+            d.tireFriction = 1.6;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Audi 2.5 TFSI five",
+                "2.5 L turbocharged inline five (RS 3, TT RS), about 400 hp at 5850 rpm.");
+            d.layout = EngineDesign::Layout::Inline;
+            d.cylinders = 5;
+            d.firingOrderText = "1-2-4-5-3";
+            d.bore = 82.5 * mm; d.stroke = 92.8 * mm; d.rodLength = 144 * mm;
+            d.compressionRatio = 10.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 220, 216, 10.7, 10.0, 110, 112);
+            timing(d, 10, 26, 4000);
+            d.redline = 7000;
+            d.induction = EngineDesign::Induction::Turbo;
+            d.boost = 20 * psi;
+            d.turbineAr = 0.7;
+            d.intercoolerEffectiveness = 0.8;
+            d.runnerLength = 0.25; d.primaryLength = 0.3;
+            d.exhaustLength = 2.8; d.exhaustDiameter = 76 * mm;
+            d.flywheelMass = 8;
+            d.lambda = 0.86;
+            d.exhaustSound = "minimal_muffling_01";
+            d.vehicleMass = 1450;
+            d.drivetrain = "awd";
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Cosworth DFV",
+                "3.0 L flat-plane racing V8 that won 155 Grands Prix (1967-1983), about 480 hp at 10500 rpm.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 8;
+            d.bankAngle = 90 * Deg;
+            d.firingOrderText = "1-8-3-6-4-5-2-7";
+            d.bore = 85.7 * mm; d.stroke = 64.8 * mm; d.rodLength = 135 * mm;
+            d.compressionRatio = 12.0;
+            d.valvesPerCylinder = 4;
+            cams(d, 290, 280, 11.5, 10.5, 104, 108);
+            timing(d, 15, 36, 8000);
+            d.redline = 11000;
+            d.runnerLength = 0.2; d.primaryLength = 0.65;
+            d.exhaustLength = 0.9; d.exhaustDiameter = 60 * mm;
+            d.flywheelMass = 2.5;
+            d.lambda = 0.88;
+            d.exhaustSound = "minimal_muffling_03";
+            d.vehicleMass = 600;
+            d.idleThrottle = 0.985;
+            d.tireFriction = 1.6;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Toyota 4A-GE",
+                "1.6 L twin-cam inline four of the AE86 Corolla, about 130 hp at 6600 rpm.");
+            d.layout = EngineDesign::Layout::Inline;
+            d.cylinders = 4;
+            d.bore = 81 * mm; d.stroke = 77 * mm; d.rodLength = 132 * mm;
+            d.compressionRatio = 10.3;
+            d.valvesPerCylinder = 4;
+            cams(d, 232, 232, 8.2, 8.2, 108, 112);
+            timing(d, 10, 32, 5000);
+            d.redline = 7600;
+            d.runnerLength = 0.3; d.primaryLength = 0.45;
+            d.exhaustLength = 2.4; d.exhaustDiameter = 50 * mm;
+            d.flywheelMass = 6.5;
+            d.lambda = 0.95;
+            d.exhaustSound = "default_0";
+            d.vehicleMass = 950;
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Subaru EJ257",
+                "2.5 L turbocharged flat four (WRX STI), about 300 hp at 6000 rpm, with the unequal-length "
+                "headers' rumble.");
+            d.layout = EngineDesign::Layout::Flat;
+            d.cylinders = 4;
+            d.firingOrderText = "1-3-2-4";
+            d.bore = 99.5 * mm; d.stroke = 79 * mm; d.rodLength = 130.5 * mm;
+            d.compressionRatio = 8.2;
+            d.valvesPerCylinder = 4;
+            cams(d, 224, 220, 9.8, 9.5, 112, 114);
+            timing(d, 10, 24, 4000);
+            d.redline = 7000;
+            d.induction = EngineDesign::Induction::Turbo;
+            d.boost = 14.5 * psi;
+            d.turbineAr = 0.6;
+            d.intercoolerEffectiveness = 0.7;
+            d.runnerLength = 0.25; d.primaryLength = 0.5;
+            d.exhaustLength = 2.8; d.exhaustDiameter = 76 * mm;
+            d.flywheelMass = 8;
+            d.lambda = 0.86;
+            d.exhaustSound = "mild_exhaust_0";
+            d.vehicleMass = 1530;
+            d.drivetrain = "awd";
+            presets.push_back(d);
+        }
+
+        {
+            EngineDesign d = base("Volkswagen VR6",
+                "2.8 L narrow-angle (15 degree) V6 with a single head (Golf VR6, Corrado), about 175 hp.");
+            d.layout = EngineDesign::Layout::V;
+            d.cylinders = 6;
+            d.bankAngle = 15 * Deg;
+            d.firingOrderText = "1-5-3-6-2-4";
+            d.bore = 81 * mm; d.stroke = 90.3 * mm; d.rodLength = 164 * mm;
+            d.compressionRatio = 10.0;
+            d.valvesPerCylinder = 2;
+            cams(d, 210, 210, 10.0, 9.5, 112, 114);
+            timing(d, 10, 30, 4000);
+            d.redline = 6500;
+            d.runnerLength = 0.4; d.primaryLength = 0.4;
+            d.exhaustLength = 3.0; d.exhaustDiameter = 60 * mm;
+            d.flywheelMass = 9;
+            d.lambda = 0.95;
+            d.exhaustSound = "mild_exhaust_0";
+            d.vehicleMass = 1300;
+            d.drivetrain = "fwd";
+            d.idleThrottle = 0.995;
+            presets.push_back(d);
+        }
+
         for (EngineDesign &d : presets) d.validate();
         return presets;
     }

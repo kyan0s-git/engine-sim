@@ -182,12 +182,13 @@ class Synthesizer {
         };
 
         double m_whinePhase;
-        double m_vibratoPhase;
         double m_flutterPhase;
         unsigned int m_fiCounter;
         float m_mixEnvelope;
         Bandpass m_whistleBand, m_whooshBand, m_flutterBand;
         Bandpass m_blowoffBand1, m_blowoffBand2, m_wastegateBand;
+        Bandpass m_whistleBand2, m_inducerBand;
+        float m_whistleRms = 0;
         const float *m_auxPointers[AuxChannels] = {};
 
         // Engine layers and listener perspective
@@ -197,6 +198,7 @@ class Synthesizer {
         double m_valvePhase = 0;
         float m_valveEnvelope = 0, m_valveAmplitude = 0;
         int m_perspective = -1;
+        OnePole m_whistleDrift, m_whistlePulse;
 
         // Overrun pops: a decaying burst injected ahead of the exhaust's
         // impulse response, so the exhaust colours it
