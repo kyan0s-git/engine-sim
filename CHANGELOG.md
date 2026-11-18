@@ -43,7 +43,24 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
 - The F1 engine uses a milder exhaust response (the rawest one rang
   metallically at its engine speeds).
 
+- Turbo flutter: without a blow-off valve (Designer > Forced induction >
+  Blow-off valve > None, or the Blow-off valve checkbox in the tuning
+  window) the compressor now surges when the throttle shuts, the
+  "stu-tu-tu" of air bursting back out through the wheel 10-25 times a
+  second, which also slows the turbo. It was offered before but never
+  happened: the simulation only counted air actually flowing backwards,
+  which the spinning wheel prevented.
+
 ### Fixes
+- The boost controller made the wastegate oscillate: the boost swung
+  between about 87 and 127 kPa around a 110 kPa target five times a
+  second (heard as a throb, and felt as a surging engine). It read the
+  raw, pulsing pressure, opened fully at 15 % over the target, and its
+  integral started pinned at its limit. It now reads a filtered sensor
+  with a gentle proportional term, a trim that doesn't wind up, a
+  pneumatic actuator's pace, and starts opening before the target as the
+  turbo comes on boost; the presets now hold their target without
+  tripping the ECU's overboost cut.
 - Roots and twin-screw superchargers built 190 kPa of boost at half
   throttle, more than at full: the bypass valve opened only on manifold
   vacuum.

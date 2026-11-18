@@ -90,7 +90,12 @@ ForcedInduction::ForcedInduction() {
     m_twinScroll = false;
     m_whistlePitch = 1.0;
     m_surge = 0;
+    m_flutter = 0;
+    m_flutterDepth = 0;
+    m_flutterPhase = 0;
     m_wastegateIntegral = 0;
+    m_boostSensor = 0;
+    m_boostRate = 0;
     m_maxCompressorFlow = 0.3;
 }
 
@@ -146,7 +151,12 @@ void ForcedInduction::initialize(const Parameters &params) {
     m_whistlePitch = clamp(params.whistlePitch, 0.25, 4.0);
     m_maxCompressorFlow = clamp(params.compressorFlow, 0.01, 3.0);
     m_surge = 0;
+    m_flutter = 0;
+    m_flutterDepth = 0;
+    m_flutterPhase = 0;
     m_wastegateIntegral = 0;
+    m_boostSensor = 0;
+    m_boostRate = 0;
     m_turbineEfficiency = clamp(params.turbineEfficiency, 0.3, 0.85);
     m_inertia = std::max(params.inertia, 1e-6);
 
@@ -371,24 +381,52 @@ void ForcedInduction::process(double dt) {
             else if (m_units[1].active && speed < 0.9 * m_sequentialSpeed) m_units[1].active = false;
         }
 
-        // Wastegate. Electronic control: proportional-integral on the boost
-        // error, holding the target. Spring actuator: opens from 75% of the
-        // set point and only fully at 120%, slowly, so boost overshoots and
-        // creeps up with the flow.
+        // Wastegate. The boost is read through a sensor (it pulses with
+        // every intake event). Electronic control: a proportional opening
+        // above the target plus a slow trim that finds the opening the
+        // target needs. Spring actuator: opens from 75 % of the set point
+        // and fully at 120 %, so boost overshoots and creeps with the flow.
+        // Both move at the pace of a pneumatic actuator.
+        // (The controller used to open fully at 15 % over the target with
+        // a fast integral that started pinned at its limit, through a 30 ms
+        // actuator on the raw, pulsing pressure: the boost swung 87-127 kPa
+        // about a 110 kPa target five times a second.)
+        const double previousSensor = m_boostSensor;
+        m_boostSensor += (boost - m_boostSensor) * std::min(1.0, dt / 0.02);
+        const double rate = (m_boostSensor - previousSensor) / dt;
+        m_boostRate += (rate - m_boostRate) * std::min(1.0, dt / 0.05);
         double wastegateTarget = 1.0;
         if (m_boostTarget > 0) {
             if (m_boostControl == BoostControl::Electronic) {
-                const double band = std::max(0.15 * m_boostTarget, units::pressure(0.5, units::psi));
-                const double error = (boost - m_boostTarget) / band;
-                m_wastegateIntegral = clamp(m_wastegateIntegral + 2.0 * error * dt, -1.0, 1.0);
-                wastegateTarget = clamp(1.0 + error + m_wastegateIntegral, 0.0, 1.0);
+                // A gentle proportional term (the boost is very sensitive to
+                // the opening: a few percent is the difference between 40
+                // and 190 kPa on a B58), firmer above 8 % over the target,
+                // and a term on the rate of rise that starts opening the
+                // valve before the target as the turbo comes on boost (the
+                // rush of a spooling turbo overshot past the ECU's
+                // overboost cut)
+                const double error = (m_boostSensor - m_boostTarget) / m_boostTarget;
+                const double proportional = 0.4 * error + 1.2 * std::max(error - 0.08, 0.0);
+                const double anticipation = (m_boostSensor > 0.7 * m_boostTarget)
+                    ? 0.06 * std::max(m_boostRate, 0.0) / m_boostTarget
+                    : 0.0;
+
+                // The trim only moves while the valve isn't pinned against
+                // a stop, and only from the spool point, so it doesn't wind
+                // up while the turbo builds boost
+                const double unclamped = proportional + m_wastegateIntegral;
+                const bool pinned = (unclamped <= 0 && error < 0) || (unclamped >= 1 && error > 0);
+                if (!pinned && m_boostSensor > 0.6 * m_boostTarget) {
+                    m_wastegateIntegral = clamp(m_wastegateIntegral + 1.5 * error * dt, 0.0, 1.0);
+                }
+                wastegateTarget = clamp(proportional + m_wastegateIntegral + anticipation, 0.0, 1.0);
             }
             else {
-                wastegateTarget = clamp((boost - 0.75 * m_boostTarget) / (0.45 * m_boostTarget), 0.0, 1.0);
+                wastegateTarget = clamp((m_boostSensor - 0.75 * m_boostTarget) / (0.45 * m_boostTarget), 0.0, 1.0);
             }
         }
         m_wastegate = approach(m_wastegate, wastegateTarget, dt,
-            (m_boostControl == BoostControl::Electronic) ? 0.03 : 0.12);
+            (m_boostControl == BoostControl::Electronic) ? 0.08 : 0.12);
 
         int activeUnits = 0;
         for (int i = 0; i < m_unitCount; ++i) {
@@ -468,8 +506,65 @@ void ForcedInduction::process(double dt) {
 
     m_blowoffFlowRate = approach(m_blowoffFlowRate, std::max(vented, 0.0) / dt, dt, 0.02);
 
+    processFlutter(dt, mix);
+
     m_charge.dissipateExcessVelocity();
     m_charge.updateVelocity(dt, 0.5);
+}
+
+void ForcedInduction::processFlutter(double dt, const GasSystem::Mix &mix) {
+    // Compressor surge ("flutter"): with high pressure behind it and almost
+    // no air going through it for its speed (the throttle shut and nothing
+    // to vent the charge), a compressor wheel stalls. The air rushes back
+    // out through it in bursts, the stall clears, the pressure builds and
+    // it stalls again, 10 to 25 times a second, each burst braking the
+    // wheel: the "stu-tu-tu" of a turbo without a blow-off valve. The
+    // flow model alone never reversed (the spinning wheel holds the
+    // pressure), so this was never heard.
+    double depth = 0;
+    const bool centrifugal = isTurbocharger() || m_type == Type::Centrifugal;
+    if (centrifugal && m_maxSpeed > 0 && m_maxCompressorFlow > 0) {
+        double flow = 0;
+        for (int i = 0; i < m_unitCount; ++i) {
+            if (m_units[i].active) flow += m_units[i].compressorFlow;
+        }
+        const double flowShare = std::abs(flow) * units::AirMolecularMass / m_maxCompressorFlow;
+        const double speedShare = clamp(m_units[0].omega / (0.35 * m_maxSpeed), 0.0, 1.0);
+        const double pr = m_charge.pressure() / Ambient;
+
+        // Past the surge line: a high pressure ratio with little flow for
+        // the wheel's speed; an open blow-off valve keeps it away
+        depth = clamp((pr - 1.12) / 0.25, 0.0, 1.0)
+            * clamp(1.0 - flowShare / (0.3 * speedShare + 0.02), 0.0, 1.0)
+            * speedShare
+            * (1.0 - clamp(m_blowoff * 3.0, 0.0, 1.0));
+    }
+    m_flutterDepth += (depth - m_flutterDepth) * std::min(1.0, dt / 0.03);
+
+    double gate = 0;
+    if (m_flutterDepth > 0.02) {
+        // Faster while the pressure is high, slowing as it bleeds away
+        m_flutterPhase += dt * (9.0 + 16.0 * m_flutterDepth);
+        m_flutterPhase -= std::floor(m_flutterPhase);
+        constexpr double Burst = 0.3;   // share of each cycle the air flows back
+        if (m_flutterPhase < Burst) {
+            gate = std::sin(constants::pi * m_flutterPhase / Burst);
+
+            // The air going back out through the wheel, and the wheel
+            // slowed by it
+            m_charge.flow(m_blowoffK * 0.6 * m_flutterDepth * gate, dt, Ambient, AmbientTemperature, mix);
+            const double drag = std::exp(-dt * 4.0 * m_flutterDepth * gate);
+            for (int i = 0; i < m_unitCount; ++i) {
+                if (!m_units[i].active || !isTurbocharger()) continue;
+                m_units[i].energy *= drag;
+                m_units[i].omega = std::sqrt(2 * std::max(m_units[i].energy, 0.0) / m_inertia);
+            }
+        }
+    }
+    else {
+        m_flutterPhase = 0.6;   // the first burst comes at once
+    }
+    m_flutter = m_flutterDepth * gate;
 }
 
 void ForcedInduction::apply(atg_scs::SystemState *system) {

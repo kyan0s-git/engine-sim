@@ -196,13 +196,14 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         double getWhineLevel() const;       // [0, 1]
         double getBlowoffLevel() const;     // [0, 1]
         double getFlowLevel() const;        // compressor flow [0, 1]
-        double getSurgeLevel() const { return m_surge; }    // [0, 1]
+        double getSurgeLevel() const { return std::max(m_surge, m_flutter); }    // [0, 1], pulsing with the flutter
         double getWastegateNoise() const;   // external wastegate venting [0, 1]
 
     protected:
         double centrifugalSourcePressureRatio(double omega) const;
         void processCentrifugal(Unit &unit, double dt, double scale, const GasSystem::Mix &mix, double T1);
         void processPositiveDisplacement(double dt, const GasSystem::Mix &mix, double T1);
+        void processFlutter(double dt, const GasSystem::Mix &mix);
         double plenumPressure() const;
         double crankSpeed() const;
 
@@ -262,7 +263,12 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         bool m_twinScroll;
         double m_whistlePitch;
         double m_surge;
+        double m_flutter;               // flutter burst level [0, 1]
+        double m_flutterDepth;          // how far past the surge line [0, 1]
+        double m_flutterPhase;          // [cycles]
         double m_wastegateIntegral;
+        double m_boostSensor;           // filtered boost [Pa]
+        double m_boostRate;             // its rate of change [Pa/s]
         double m_maxCompressorFlow;     // [kg/s]
         double m_compressorOutletTemperature;
 };

@@ -396,7 +396,7 @@ int main(int argc, char *argv[]) {
         run(simulator, 1.0, [](double) {});
     }
 
-    std::printf("t_s,rpm,gear,speed_kmh,distance_m,boost_kPa,target_kPa,clutch,throttle,idle_air,flags\n");
+    std::printf("t_s,rpm,gear,speed_kmh,distance_m,boost_kPa,target_kPa,clutch,throttle,idle_air,wastegate,flags\n");
 
     double t = 0, nextTrace = 0;
     double t60 = -1, t100 = -1, tQuarter = -1, trap = 0, peakSpeed = 0;
@@ -458,7 +458,7 @@ int main(int argc, char *argv[]) {
             nextTrace += options.trace;
             const ForcedInduction *fi = engine->getForcedInduction();
             const Ecu::State &ecuState = simulator->getEcu().state();
-            std::printf("%.2f,%.0f,%d,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f,%.3f,%s%s%s%s\n",
+            std::printf("%.2f,%.0f,%d,%.1f,%.1f,%.1f,%.1f,%.2f,%.2f,%.3f,%.3f,%s%s%s%s\n",
                 t, engine->getRpm(), transmission->getGear() + 1,
                 std::abs(vehicle->getSpeed()) * 3.6,
                 vehicle->getTravelledDistance() - startDistance,
@@ -467,6 +467,7 @@ int main(int argc, char *argv[]) {
                 transmission->getClutchPressure(),
                 engine->getSpeedControl(),
                 ecuState.idleAir,
+                (fi != nullptr) ? fi->getWastegateOpening() : 0.0,
                 ecuState.overboost ? "O" : "", ecuState.limiting ? "L" : "",
                 ecuState.shifting ? "S" : "", ecuState.launchActive ? "C" : "");
         }

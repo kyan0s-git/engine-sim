@@ -716,14 +716,20 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
             tonal += whine * (0.45f * tone + 1.5f * m_whistleBand.process(noise()));
         }
 
-        // Compressor surge without a blow-off valve: a fluttering chop
         float bursts = 0;
-        if (surge > 0.01f) {
-            m_flutterPhase += twoPi * (11.0 + 7.0 * surge) / fs;
-            if (m_flutterPhase > twoPi) m_flutterPhase -= twoPi;
-            const float gate = static_cast<float>(std::pow(std::max(std::sin(m_flutterPhase), 0.0), 3.0));
-            if ((m_fiCounter & 31) == 1) m_flutterBand.set(380.0f, 1.6f, fs);
-            bursts += 2.0f * surge * gate * m_flutterBand.process(noise());
+
+        // Compressor surge without a blow-off valve ("flutter"): the
+        // simulation pulses the level with each burst of air going back
+        // out through the wheel; each is an airy "chu" with a hollow low
+        // body from the intake pipe. (The level used to be smooth and the
+        // pulsing was made up here, and it never got past zero.)
+        if (surge > 0.003f) {
+            if ((m_fiCounter & 31) == 1) {
+                m_flutterBand.set(1700.0f, 1.1f, fs);
+                m_flutterLow.set(420.0f, 1.6f, fs);
+            }
+            const float r = noise();
+            bursts += surge * (2.4f * m_flutterBand.process(r) + 1.6f * m_flutterLow.process(r));
         }
 
         // Blow-off: a sharp vented "pssh" or a soft recirculating whoosh.
