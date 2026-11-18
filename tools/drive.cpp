@@ -352,7 +352,7 @@ int main(int argc, char *argv[]) {
         // Free revving in neutral: blips, a pull against the limiter, lifts
         // (overrun and blow-off), part throttle, idle. One line per 0.25 s:
         // time, phase, rpm, throttle, boost [kPa], shaft [rpm], whine, flow,
-        // blow-off and surge levels
+        // blow-off and surge levels, wastegate bypass
         transmission->changeGear(-1);
         struct Phase { const char *name; double throttle; double seconds; };
         const double limiterHold = 2.5;
@@ -372,13 +372,14 @@ int main(int argc, char *argv[]) {
                 if (options.trace > 0 && clock >= next) {
                     next += options.trace;
                     const ForcedInduction *fi = engine->getForcedInduction();
-                    std::printf("%.2f,%s,%.0f,%.2f,%.1f,%.0f,%.3f,%.3f,%.3f,%.3f\n", clock, phase.name, engine->getRpm(), phase.throttle,
+                    std::printf("%.2f,%s,%.0f,%.2f,%.1f,%.0f,%.3f,%.3f,%.3f,%.3f,%.3f\n", clock, phase.name, engine->getRpm(), phase.throttle,
                         fi != nullptr ? fi->getBoost() / 1000.0 : 0.0,
                         fi != nullptr ? fi->getShaftSpeed() * 60.0 / (2 * 3.14159265358979) : 0.0,
                         fi != nullptr ? fi->getWhineLevel() : 0.0,
                         fi != nullptr ? fi->getFlowLevel() : 0.0,
                         fi != nullptr ? fi->getBlowoffLevel() : 0.0,
-                        fi != nullptr ? fi->getSurgeLevel() : 0.0);
+                        fi != nullptr ? fi->getSurgeLevel() : 0.0,
+                        fi != nullptr ? fi->getWastegateBypass() : 0.0);
                 }
             });
         }

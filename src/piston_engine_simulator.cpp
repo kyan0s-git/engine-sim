@@ -510,8 +510,12 @@ void PistonEngineSimulator::writeToSynthesizer() {
         aux[2] = forcedInduction->getBlowoffLevel();
         aux[3] = forcedInduction->getFlowLevel();
         aux[4] = forcedInduction->getSurgeLevel();
-        aux[5] = forcedInduction->getWastegateNoise();
-        aux[6] = 10 * type + static_cast<int>(forcedInduction->getBlowoffType());
+        aux[5] = forcedInduction->getWastegateBypass();
+        // Mode: wastegate (0 internal, 1 external into the exhaust,
+        // 2 external to the atmosphere), type, blow-off valve
+        const int wastegate = !forcedInduction->hasExternalWastegate() ? 0
+            : (forcedInduction->isWastegateVentedToAtmosphere() ? 2 : 1);
+        aux[6] = 100 * wastegate + 10 * type + static_cast<int>(forcedInduction->getBlowoffType());
     }
 
     // Engine layers: flow through the throttle(s), the throttle opening as

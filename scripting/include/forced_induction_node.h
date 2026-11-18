@@ -57,6 +57,7 @@ namespace es_script {
                 ? ForcedInduction::BoostControl::Spring
                 : ForcedInduction::BoostControl::Electronic;
             params.externalWastegate = (m_wastegate == "external");
+            params.wastegateToAtmosphere = (m_wastegateVent != "exhaust");
             params.twinScroll = m_twinScroll;
             params.whistlePitch = m_whistlePitch;
             params.driveRatio = m_driveRatio;
@@ -96,6 +97,7 @@ namespace es_script {
             addInput("blowoff_type", &m_blowoffType);
             addInput("boost_control", &m_boostControl);
             addInput("wastegate", &m_wastegate);
+            addInput("wastegate_vent", &m_wastegateVent);
             addInput("twin_scroll", &m_twinScroll);
             addInput("whistle_pitch", &m_whistlePitch);
 
@@ -128,6 +130,7 @@ namespace es_script {
         std::string m_blowoffType = "atmospheric";
         std::string m_boostControl = "electronic";
         std::string m_wastegate = "internal";
+        std::string m_wastegateVent = "atmosphere";
         bool m_twinScroll = false;
         double m_whistlePitch = 1.0;
     };

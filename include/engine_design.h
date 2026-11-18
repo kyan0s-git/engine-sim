@@ -93,6 +93,7 @@ struct EngineDesign {
     std::string blowoffType = "atmospheric";    // atmospheric, recirculating, none
     std::string boostControl = "electronic";    // electronic, spring
     bool externalWastegate = false;
+    std::string wastegateVent = "atmosphere";   // external wastegate: atmosphere (screamer pipe) or exhaust
     bool twinScroll = false;
     double whistlePitch = 1.0;
 

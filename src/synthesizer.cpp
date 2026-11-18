@@ -125,6 +125,11 @@ void Synthesizer::initialize(const Parameters &p) {
     m_turbineLow2.set(1700.0f, fs);
     m_blowoffFollow = 1.0f - std::exp(-1.0f / (0.2f * fs));
     m_whineSmoothing = 1.0f - std::exp(-1.0f / (0.1f * fs));
+    m_blowoffAttack = 1.0f - std::exp(-1.0f / (0.004f * fs));
+    m_wastegateSmooth.set(15.0f, fs);
+    m_wastegateChatter.set(30.0f, fs);
+    m_screamerLow.set(220.0f, fs);
+    m_blowoffDecay = std::exp(-1.0f / (0.45f * fs));
     m_spoolMemoryRelease = std::exp(-1.0f / (0.6f * fs));
     m_raspBand.set(2400.0f, 0.6f, fs);
     m_cabinBoom.set(95.0f, 1.3f, fs);
@@ -341,6 +346,7 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
         m_channelOutput.resize(n);
         m_mixBuffer.resize(n);
         m_layerBuffer.resize(n);
+        m_rawExhaust.resize(n);
         m_envelope.resize(n);
         m_popBuffer.resize(n);
         m_renderedAudio.resize(n);
@@ -352,6 +358,7 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
 
     std::fill(m_mixBuffer.begin(), m_mixBuffer.begin() + n, 0.0f);
     std::fill(m_layerBuffer.begin(), m_layerBuffer.begin() + n, 0.0f);
+    std::fill(m_rawExhaust.begin(), m_rawExhaust.begin() + n, 0.0f);
 
     // Overrun pops, shared by the exhaust channels (each scales them to its
     // own level)
@@ -395,6 +402,7 @@ void Synthesizer::renderBlock(int n, const AudioParameters &parameters) {
             v_in += m_popBuffer[j] * inputPeak;
 
             m_channelInput[j] = v_in;
+            m_rawExhaust[j] += v_in;
         }
 
         filters.convolution.process(
@@ -584,7 +592,9 @@ float Synthesizer::Bandpass::process(float x) {
 // Turbocharger and supercharger sounds, driven by control channels from the
 // simulation: [0] shaft or rotor frequency [Hz] (times the whistle pitch),
 // [1] whine level, [2] blow-off flow, [3] compressor flow, [4] surge,
-// [5] external wastegate venting, [6] mode (10 * type + blow-off type;
+// [5] share of the exhaust the wastegate lets around the turbine,
+// [6] mode (100 * wastegate + 10 * type + blow-off type; wastegate 0
+// internal, 1 external into the exhaust, 2 external to a screamer pipe;
 // types 1 turbo, 2 Roots, 3 twin-screw, 4 centrifugal; blow-off 0 vented,
 // 1 recirculating, 2 none)
 namespace {
@@ -601,12 +611,22 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
     for (int k = 0; k < ForcedInductionChannels; ++k) m_auxPointers[k] = m_inputChannels[m_inputChannelCount + k].transferBuffer;
 
     const int mode = static_cast<int>(std::lround(aux[6][0]));
-    const int type = mode / 10;
+    const int wastegateKind = mode / 100;     // 0 internal, 1 external into the exhaust, 2 screamer pipe
+    const int type = (mode / 10) % 10;
     const int blowoffType = mode % 10;
     if (type == 0) return;
 
+    const int perspective = std::clamp(parameters.perspective, 0, 2);
     const float perspectiveWeights[] = { 1.0f, 0.8f, 1.35f };
-    const float volume = parameters.forcedInductionVolume * perspectiveWeights[std::clamp(parameters.perspective, 0, 2)];
+    const float volume = parameters.forcedInductionVolume * perspectiveWeights[perspective];
+    // The whistle and hiss come from the compressor under the bonnet: from
+    // behind the car they are faint next to the exhaust (weighted for the
+    // ear's sensitivity at 3-6 kHz they were as loud as the whole exhaust
+    // on a full-throttle run), in the cabin they come through the
+    // firewall, and by the engine they are loud. A blow-off valve vents
+    // into the open and is heard everywhere.
+    const float spoolWeights[] = { 0.33f, 1.0f, 1.0f };
+    const float spoolVolume = spoolWeights[perspective];
     const float fs = m_audioSampleRate;
     const float floor = 0.08f * parameters.levelerTarget;
     const double twoPi = 2 * 3.14159265358979323846;
@@ -721,8 +741,15 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
         // is silent
         m_whineSmooth += (whine - m_whineSmooth) * m_whineSmoothing;
         m_spoolMemory = std::max(m_whineSmooth, m_spoolMemory * m_spoolMemoryRelease);
-        const float burst = std::clamp((blowoff - m_blowoffSlow) * 1.6f, 0.0f, 1.0f)
+        // The opening sets an envelope that then dies away smoothly as the
+        // trapped boost bleeds off (it used to follow the rise itself, and
+        // stopped dead as soon as the flow stopped rising)
+        const float rise = std::clamp((blowoff - m_blowoffSlow) * 1.6f, 0.0f, 1.0f)
             * smoothstep(0.08f, 0.4f, m_spoolMemory);
+        m_blowoffEnvelope = (rise > m_blowoffEnvelope)
+            ? m_blowoffEnvelope + (rise - m_blowoffEnvelope) * m_blowoffAttack
+            : m_blowoffEnvelope * m_blowoffDecay;
+        const float burst = m_blowoffEnvelope;
         if (burst > 0.001f) {
             if ((m_fiCounter & 31) == 2) {
                 m_blowoffBand1.set(blowoffType == 1 ? 1200.0f : 3200.0f, blowoffType == 1 ? 1.0f : 0.8f, fs);
@@ -734,20 +761,42 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
                 : burst * (4.0f * m_blowoffBand1.process(r) + 1.6f * m_blowoffBand2.process(r));
         }
 
-        // External wastegate venting through its own pipe
-        if (wastegate > 0.01f) {
-            if ((m_fiCounter & 31) == 3) m_wastegateBand.set(1500.0f, 2.5f, fs);
-            bursts += 0.6f * wastegate * m_wastegateBand.process(noise());
-        }
+        m_layerBuffer[j] += volume * (spoolVolume * tonal * (1.1f * envelope + 0.4f * floor) + bursts * reference * 1.5f);
 
-        m_layerBuffer[j] += volume * (tonal * (1.1f * envelope + 0.4f * floor) + bursts * reference * 1.5f);
-
-        // The turbine sits in the exhaust and soaks up the sharp edge of
-        // each pulse: a turbocharged engine's exhaust is smoother and
-        // duller than the same engine's without one
         if (type == 1) {
+            // The turbine sits in the exhaust and soaks up the sharp edge of
+            // each pulse: a turbocharged engine's exhaust is smoother and
+            // duller than the same engine's without one. The gas the
+            // wastegate lets around the turbine isn't smoothed: with an
+            // internal wastegate, or an external one plumbed back into the
+            // exhaust, the exhaust gets rawer and louder as it opens on
+            // boost. A screamer pipe takes that gas out on its own instead.
+            const float bypass = m_wastegateSmooth.process(std::clamp(wastegate, 0.0f, 1.0f));
             const float x = m_mixBuffer[j];
-            m_mixBuffer[j] = 0.45f * x + 0.7f * m_turbineLow2.process(m_turbineLow1.process(x));
+            const float muffled = 0.45f * x + 0.7f * m_turbineLow2.process(m_turbineLow1.process(x));
+            if (wastegateKind == 2) {
+                // Less gas leaves through the tailpipe
+                m_mixBuffer[j] = muffled * (1.0f - 0.3f * bypass);
+
+                // The screamer pipe: the raw exhaust pulses through a
+                // short open pipe, unsilenced. High-passed and driven into
+                // a soft clip for the rasp, with the flap chattering a
+                // little as it holds the boost
+                const float raw = m_rawExhaust[j];
+                const float edge = raw - m_screamerLow.process(raw);
+                m_screamerRms += (edge * edge - m_screamerRms) * (1.0f / (0.05f * fs));
+                const float normalized = edge / std::sqrt(std::max(m_screamerRms, 1e-12f));
+                const float rasp = std::tanh(1.6f * normalized);
+                const float chatter = 0.8f + 0.2f * std::clamp(m_wastegateChatter.process(noise()) * 6.0f, -1.0f, 1.0f);
+                if ((m_fiCounter & 31) == 3) m_wastegateBand.set(1800.0f, 1.2f, fs);
+                const float gas = m_wastegateBand.process(noise());
+                m_mixBuffer[j] += volume * smoothstep(0.02f, 0.5f, bypass) * envelope
+                    * (1.3f * rasp * chatter + 0.5f * gas);
+            }
+            else {
+                const float share = 1.0f - 0.85f * bypass;
+                m_mixBuffer[j] = x + share * (muffled - x) + 0.25f * bypass * x;
+            }
         }
     }
 }

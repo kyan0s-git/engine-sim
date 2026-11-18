@@ -138,6 +138,7 @@ void ForcedInduction::initialize(const Parameters &params) {
     m_turbineK = GasSystem::flowConstant(
         turbineFlow, 2.2 * Ambient, 1.2 * Ambient, 1000.0, 1.33);
     m_externalWastegate = params.externalWastegate;
+    m_wastegateToAtmosphere = params.wastegateToAtmosphere;
     m_wastegateK = (m_externalWastegate ? 6.0 : 4.0) * m_turbineK;
     m_twinScroll = params.twinScroll;
     m_blowoffType = params.blowoffType;
@@ -529,6 +530,11 @@ double ForcedInduction::getWhineLevel() const {
 
 double ForcedInduction::getFlowLevel() const {
     return clamp(std::abs(getCompressorFlow()) * units::AirMolecularMass / std::max(m_maxCompressorFlow, 0.01), 0.0, 1.0);
+}
+
+double ForcedInduction::getWastegateBypass() const {
+    if (!isTurbocharger() || m_wastegate <= 0) return 0.0;
+    return clamp(1.0 - m_turbineFraction, 0.0, 1.0);
 }
 
 double ForcedInduction::getWastegateNoise() const {

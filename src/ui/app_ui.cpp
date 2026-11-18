@@ -2848,8 +2848,16 @@ void AppUi::buildDesignerWindow() {
 
                     label("External wastegate");
                     ImGui::Checkbox("##extwg", &d.externalWastegate);
-                    ui::HelpMarker("A larger, separate wastegate: better boost control at high flow "
-                        "and its own screamer-pipe sound.");
+                    ui::HelpMarker("A larger, separate wastegate: better boost control at high flow.");
+                    if (d.externalWastegate) {
+                        label("Wastegate vent");
+                        int vent = (d.wastegateVent == "exhaust") ? 1 : 0;
+                        const char *vents[] = { "Screamer pipe (to atmosphere)", "Back into the exhaust" };
+                        if (ImGui::Combo("##wgvent", &vent, vents, 2)) d.wastegateVent = vent ? "exhaust" : "atmosphere";
+                        ui::HelpMarker("A screamer pipe dumps the gas the wastegate lets past the turbine "
+                            "straight out, unsilenced: a raw rasp on boost. Plumbed back into the exhaust it "
+                            "goes through the muffler, and the exhaust gets louder and rawer instead.");
+                    }
                 }
                 else {
                     label("Drive ratio");

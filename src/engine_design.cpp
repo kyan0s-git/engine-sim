@@ -141,6 +141,7 @@ namespace {
             { "blowoff_type", d.blowoffType },
             { "boost_control", d.boostControl },
             { "external_wastegate", d.externalWastegate ? "1" : "0" },
+            { "wastegate_vent", d.wastegateVent },
             { "twin_scroll", d.twinScroll ? "1" : "0" },
             { "whistle_pitch", exact(d.whistlePitch) },
             { "drivetrain", d.drivetrain },
@@ -246,6 +247,7 @@ namespace {
               << "            blowoff_type: \"" << d.blowoffType << "\",\n"
               << "            boost_control: \"" << d.boostControl << "\",\n"
               << "            wastegate: \"" << (d.externalWastegate ? "external" : "internal") << "\",\n"
+              << "            wastegate_vent: \"" << d.wastegateVent << "\",\n"
               << "            twin_scroll: " << (d.twinScroll ? "true" : "false") << ",\n"
               << "            whistle_pitch: " << num(d.whistlePitch) << ",\n"
               << "            intercooler_effectiveness: " << num(d.intercoolerEffectiveness) << ",\n"
@@ -665,6 +667,7 @@ bool EngineDesign::validate() {
     driveRatio = std::clamp(driveRatio, 0.0, 25.0);
     if (blowoffType != "recirculating" && blowoffType != "none") blowoffType = "atmospheric";
     if (boostControl != "spring") boostControl = "electronic";
+    if (wastegateVent != "exhaust") wastegateVent = "atmosphere";
     whistlePitch = std::clamp(whistlePitch, 0.25, 4.0);
     if (drivetrain != "fwd" && drivetrain != "awd") drivetrain = "rwd";
     tireFriction = std::clamp(tireFriction, 0.3, 2.0);
@@ -1133,6 +1136,7 @@ bool readEngineDesign(const std::string &scriptText, EngineDesign *design) {
     text("blowoff_type", &d.blowoffType);
     text("boost_control", &d.boostControl);
     flag("external_wastegate", &d.externalWastegate);
+    text("wastegate_vent", &d.wastegateVent);
     flag("twin_scroll", &d.twinScroll);
     number("whistle_pitch", &d.whistlePitch);
     text("drivetrain", &d.drivetrain);

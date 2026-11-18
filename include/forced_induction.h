@@ -86,7 +86,8 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
             bool blowoffValve = true;
             BlowoffType blowoffType = BlowoffType::Atmospheric;
             BoostControl boostControl = BoostControl::Electronic;
-            bool externalWastegate = false;     // larger, vents through its own pipe
+            bool externalWastegate = false;     // larger, separate valve
+            bool wastegateToAtmosphere = true;  // external: own pipe (screamer) or back into the exhaust
             bool twinScroll = false;            // divided turbine housing: better spool
             double whistlePitch = 1.0;          // sound only
 
@@ -180,6 +181,8 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         void setBoostControl(BoostControl control) { m_boostControl = control; }
         BoostControl getBoostControl() const { return m_boostControl; }
         bool hasExternalWastegate() const { return m_externalWastegate; }
+        bool isWastegateVentedToAtmosphere() const { return m_externalWastegate && m_wastegateToAtmosphere; }
+        double getWastegateBypass() const;  // share of the exhaust going around the turbine [0, 1]
         bool isTwinScroll() const { return m_twinScroll; }
         void setWhistlePitch(double pitch) { m_whistlePitch = pitch; }
         double getWhistlePitch() const { return m_whistlePitch; }
@@ -255,6 +258,7 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         BlowoffType m_blowoffType;
         BoostControl m_boostControl;
         bool m_externalWastegate;
+        bool m_wastegateToAtmosphere = true;
         bool m_twinScroll;
         double m_whistlePitch;
         double m_surge;

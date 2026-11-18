@@ -194,6 +194,10 @@ class Synthesizer {
         float m_blowoffSlow = -1, m_blowoffFollow = 0;
         float m_spoolMemory = 0, m_spoolMemoryRelease = 1;
         float m_whineSmooth = 0, m_whineSmoothing = 0;
+        float m_blowoffEnvelope = 0, m_blowoffAttack = 1, m_blowoffDecay = 0;
+        OnePole m_wastegateSmooth, m_wastegateChatter, m_screamerLow;
+        float m_screamerRms = 0;
+        std::vector<float> m_rawExhaust;
         const float *m_auxPointers[AuxChannels] = {};
 
         // Engine layers and listener perspective

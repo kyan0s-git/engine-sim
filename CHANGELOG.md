@@ -28,8 +28,18 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   with inlet hiss that follows the air flow, and the turbine smooths the
   exhaust note.
 - Blow-off valves hissed through every overrun and at idle (the valve
-  stays open while the compressor spins); they now give a short burst
-  when boost is released.
+  stays open while the compressor spins); they now give a burst when
+  boost is released that dies away over about a second instead of
+  stopping dead.
+- The turbo whistle and hiss are quieter outside the car (weighted for
+  the ear they were as loud as the whole exhaust); the driver's seat and
+  engine bay are unchanged.
+- Wastegates are heard: gas let around the turbine isn't smoothed by it,
+  so the exhaust gets rawer as the wastegate opens on boost. An external
+  wastegate can vent through a screamer pipe (the raw, unsilenced rasp,
+  as before but now made from the engine's own exhaust pulses) or back
+  into the exhaust: Designer > Forced induction > Wastegate vent, or
+  `wastegate_vent: "atmosphere"` / `"exhaust"` in scripts.
 - The F1 engine uses a milder exhaust response (the rawest one rang
   metallically at its engine speeds).
 

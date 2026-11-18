@@ -930,6 +930,7 @@ private node _forced_induction => __engine_sim__forced_induction {
     input blowoff_type [string];
     input boost_control [string];
     input wastegate [string];
+    input wastegate_vent [string];
     input twin_scroll [bool];
     input whistle_pitch [float];
     alias output __out [forced_induction_channel];
@@ -956,6 +957,7 @@ public node turbocharger {
     input blowoff_type: "atmospheric";      // "atmospheric", "recirculating" or "none"
     input boost_control: "electronic";      // "electronic" or "spring"
     input wastegate: "internal";            // "internal" or "external"
+    input wastegate_vent: "atmosphere";     // external: "atmosphere" (screamer pipe) or "exhaust"
     input twin_scroll: false;
     input whistle_pitch: 1.0;
     alias output __out:
@@ -981,6 +983,7 @@ public node turbocharger {
             blowoff_type: blowoff_type,
             boost_control: boost_control,
             wastegate: wastegate,
+            wastegate_vent: wastegate_vent,
             twin_scroll: twin_scroll,
             whistle_pitch: whistle_pitch
         );
@@ -1027,6 +1030,7 @@ public node supercharger {
             blowoff_type: blowoff_type,
             boost_control: "electronic",
             wastegate: "internal",
+            wastegate_vent: "atmosphere",
             twin_scroll: false,
             whistle_pitch: whistle_pitch
         );
