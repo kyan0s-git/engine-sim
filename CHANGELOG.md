@@ -4,6 +4,40 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
+## [Unreleased]
+
+### Gearbox
+- The automatic gearbox sat on the rev limiter, sometimes for seconds,
+  when the tires spun: it waited for the road speed to reach the shift
+  point. It now reads the driven wheels like a real gearbox, keeps every
+  shift point under the rev limit (and a soft limiter's band, even after
+  the limit is lowered in a tune), shifts after a quarter second on the
+  limiter even in its manual mode, and holds a gear for a moment after
+  an upshift instead of dropping straight back.
+
+### Sound
+- Choppy, stuttering sound with heavy engines (the F1 engine above all):
+  when the computer couldn't simulate in real time, playback ran past the
+  written audio and replayed a second-old fragment. Gaps are now a soft
+  fade, and the simulation frequency is lowered automatically (to no
+  less than half the engine's setting, with a message) until the
+  simulation keeps up, and raised again when there is room.
+- Turbochargers: the whistle was two tones a fifth apart, heard even at
+  idle and nearly as loud as the exhaust. It is now one band of rushing
+  air with a faint tone, heard only on boost and well under the exhaust,
+  with inlet hiss that follows the air flow, and the turbine smooths the
+  exhaust note.
+- Blow-off valves hissed through every overrun and at idle (the valve
+  stays open while the compressor spins); they now give a short burst
+  when boost is released.
+- The F1 engine uses a milder exhaust response (the rawest one rang
+  metallically at its engine speeds).
+
+### Fixes
+- Roots and twin-screw superchargers built 190 kPa of boost at half
+  throttle, more than at full: the bypass valve opened only on manifold
+  vacuum.
+
 ## [0.6.0] - 2026-11-17
 
 ### Crashes and freezes
