@@ -134,6 +134,7 @@ void Synthesizer::initialize(const Parameters &p) {
     m_envelopeMemoryRelease = std::exp(-1.0f / (1.5f * fs));
     m_flutterAttack = 1.0f - std::exp(-1.0f / (0.006f * fs));
     m_flutterRelease = 1.0f - std::exp(-1.0f / (0.010f * fs));
+    m_flutterTail = 1.0f - std::exp(-1.0f / (0.040f * fs));
     m_flutterRingBand.set(640.0f, 12.0f, fs);
     m_raspBand.set(2400.0f, 0.6f, fs);
     m_cabinBoom.set(95.0f, 1.3f, fs);
@@ -743,12 +744,17 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
             m_flutterQuiet = 0;
             m_flutterAge += 1.0f / fs;
 
-            // The note is the wheel's rotation frequency: in the recording the
-            // whistle before the lift (the blade passing frequency of a
-            // 6 + 6 blade wheel) was 11.7 times the pitch of the bursts.
-            // So a big, slow turbo flutters low, a small fast one chirps,
-            // and every one falls as its wheel slows
-            const float pitch = std::clamp(shaft, 100.0f, 3000.0f);
+            // The note is the wheel's rotation frequency. In the recording,
+            // over every event, the whistle before the lift (the blade
+            // passing frequency of a 6 + 6 blade wheel) was 12.6-12.9 times
+            // the pitch of the bursts, so the note is set from the whistle
+            // as heard: a turbo with a low whistle flutters low, a high
+            // one chirps, and every one falls as its wheel slows. (Taking
+            // the shaft frequency directly put it at a quarter of the
+            // whistle here, an octave and more too high, since the
+            // whistle's pitch is not modelled as twelve blades.)
+            const float whistle = 900.0f + ((type == 4) ? 2.8f : 3.6f) * shaft;
+            const float pitch = std::clamp(whistle / 12.7f, 90.0f, 1500.0f);
             if ((m_fiCounter & 31) == 1) {
                 m_flutterTone.set(pitch, 5.0f, fs);
                 m_flutterTone2.set(2.0f * pitch, 4.0f, fs);
@@ -757,9 +763,13 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
 
             // The envelope follows the backflow, shaped to the measured
             // attack and decay
+            // When the surge stops (the throttle opens again, as after a
+            // quick gear change) the burst sounding at that moment rings
+            // out over ~40 ms rather than stopping dead
             const float target = std::min(surge * 2.0f, 1.0f);
+            const float release = (surge > 0.002f) ? m_flutterRelease : m_flutterTail;
             m_flutterEnvelope += (target - m_flutterEnvelope)
-                * ((target > m_flutterEnvelope) ? m_flutterAttack : m_flutterRelease);
+                * ((target > m_flutterEnvelope) ? m_flutterAttack : release);
 
             m_flutterPhase += twoPi * pitch / fs;
             if (m_flutterPhase > twoPi) m_flutterPhase -= twoPi;
