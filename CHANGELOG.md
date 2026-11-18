@@ -42,7 +42,6 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   `wastegate_vent: "atmosphere"` / `"exhaust"` in scripts.
 - The F1 engine uses a milder exhaust response (the rawest one rang
   metallically at its engine speeds).
-
 - Turbo flutter: without a blow-off valve (Designer > Forced induction >
   Blow-off valve > None, or the Blow-off valve checkbox in the tuning
   window) the compressor now surges when the throttle shuts. It was
@@ -52,10 +51,11 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
   follows each engine's turbo and pipework, and each burst brakes the
   wheel. Each burst is a short "tu" at the wheel's rotation frequency
   (set from the whistle, 12.7 times higher, as measured), falling as it
-  slows; when the throttle reopens the last one rings out. Measured against a recording of a tuned 2JZ:
-  pulses 75-95 ms apart, a tonal note at the shaft speed (the whistle
-  there was 11.7 times the burst pitch: a 6 + 6 blade wheel), about a
-  second long, fading 10 dB, louder than the engine in its band.
+  slows; when the throttle reopens the last one rings out. Measured
+  against a recording of a tuned 2JZ: pulses 75-95 ms apart, a tonal
+  note at the shaft speed (the whistle there was 12.6-12.9 times the
+  burst pitch: a 6 + 6 blade wheel), about a second long, fading 10 dB,
+  louder than the engine in its band.
   Settings > Audio > Turbo flutter: "As simulated" or "Pronounced" (a
   more ringing note).
 - The blow-off valve and flutter follow how loud the engine was just
