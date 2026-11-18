@@ -163,6 +163,9 @@ class Ecu {
         int m_shiftTarget;
         double m_manualHold;            // automatic shifting paused after a manual shift [s]
         double m_timeInGear;
+        bool m_lastShiftUp = false;
+        double m_throttleAtShift = 0;
+        double m_limiterTime = 0;       // time held at the top shift point [s]
         bool m_idleArmed = false;
         double m_overboostTimer;
         double m_boostFiltered = 0;     // [kPa]

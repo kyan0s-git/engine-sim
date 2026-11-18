@@ -102,6 +102,7 @@ Ecu::Ecu() {
     m_shiftTimer = 0;
     m_shiftTarget = -1;
     m_manualHold = 0;
+    m_limiterTime = 0;
     m_overboostTimer = 0;
     m_boostFiltered = 0;
     m_launchClutch = 0;
@@ -122,6 +123,7 @@ void Ecu::initialize(Engine *engine, Transmission *transmission, Vehicle *vehicl
     m_idleAir = 0;
     m_shiftTimer = 0;
     m_manualHold = 0;
+    m_limiterTime = 0;
     m_overboostTimer = 0;
     m_boostFiltered = 0;
     m_launchClutch = 0;
@@ -311,8 +313,8 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
         }
     }
 
-    // Engine speed the wheels would turn the engine at in this gear
-    const double wheelRpm = units::toRpm(
+    // Engine speed the road speed would turn the engine at in this gear
+    const double roadRpm = units::toRpm(
         vehicleSpeed / std::max(m_vehicle->getTireRadius(), 0.05)
         * m_vehicle->getDiffRatio() * t->getGearRatio(gear));
 
@@ -327,23 +329,50 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
     // engine above idle.
     const double lockRpm = m_settings.idleRpm + 0.6 * m_settings.launchClutchRpm;
     double clutch = 1.0;
-    if (wheelRpm > lockRpm) m_launchClutch = 1.0;
+    if (roadRpm > lockRpm) m_launchClutch = 1.0;
     else clutch = launchClutch(dt, rpm, throttle);
     t->setClutchPressure(clutch);
 
-    if (m_manualHold > 0) return;
+    // A gearbox reads its output shaft, which turns with the driven wheels:
+    // with the clutch locked, an engine running faster than the road speed
+    // means the tires are spinning, and the wheels (and the output shaft)
+    // turn at the engine's speed. Reading the road speed instead held the
+    // gear through wheelspin and left the engine on the rev limiter
+    const bool locked = (clutch > 0.95);
+    const double wheelRpm = locked ? std::max(roadRpm, rpm) : roadRpm;
+
+    // Every shift point stays far enough under the rev limit for the engine
+    // to reach it (a soft limiter takes power away before the limit), even
+    // after the limit is lowered in the tune
+    const double limitMargin = std::max(100.0,
+        (m_settings.limiter == Limiter::Soft) ? 0.5 * m_settings.softBand : 0.0);
+    const double shiftCeiling = m_settings.revLimit - limitMargin;
 
     const double throttlePercent = throttle * 100.0;
     auto upshiftRpm = [&](int g) {
+        double r = m_settings.upshift.sample(throttlePercent);
         if (g >= 0 && g < static_cast<int>(m_settings.wotUpshift.size())
             && m_settings.wotUpshift[g] > 0 && throttle > 0.9)
         {
-            return m_settings.wotUpshift[g];
+            r = m_settings.wotUpshift[g];
         }
-        return std::min(m_settings.upshift.sample(throttlePercent), m_settings.revLimit - 50);
+        return std::min(r, shiftCeiling);
     };
 
+    // On the limiter in a gear with one above it, any gearbox shifts (an
+    // automatic in its manual mode included)
+    // (the limiter swings the engine speed, so the time builds up while it
+    // is at the ceiling and drains more slowly while it is cut)
+    if (rpm >= shiftCeiling && locked) m_limiterTime += dt;
+    else m_limiterTime = std::max(m_limiterTime - 0.5 * dt, 0.0);
+    const bool braking = m_vehicle->getBrakeLevel() > 0;
+    const bool stuckOnLimiter = (m_limiterTime > 0.25 && throttle > 0.5 && !braking);
+
+    if (m_manualHold > 0 && !stuckOnLimiter) return;
+
     auto startShift = [&](int target, const char *what) {
+        m_lastShiftUp = (target > gear);
+        m_throttleAtShift = throttle;
         m_shiftTarget = target;
         m_shiftTimer = m_settings.shiftTime;
         m_timeInGear = 0;
@@ -351,15 +380,16 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
         m_state.lastShift = std::string(what) + " at " + std::to_string(static_cast<int>(rpm)) + " rpm";
     };
 
-    // Upshifts need the engine at the shift point and the road speed close
-    // to it as well (a gearbox reads its output shaft): shifting on the
-    // engine speed alone during wheelspin lands in a gear too tall to pull.
-    // Downshifts follow the road speed so that the engine speed sagging
-    // during a shift or recovering from wheelspin doesn't trigger one
-    const bool braking = m_vehicle->getBrakeLevel() > 0;
-    if (gear < gearCount - 1 && rpm > upshiftRpm(gear) && wheelRpm > 0.85 * upshiftRpm(gear)
-        && clutch > 0.95 && m_timeInGear > 0.3 && !braking)
+    // Upshifts need the engine at the shift point with the clutch locked
+    // (not while it slips to launch the car). Downshifts follow the output
+    // shaft, so that the engine speed sagging during a shift doesn't trigger
+    // one, and wheelspin (the wheels turning fast) doesn't either
+    if (gear < gearCount - 1 && !braking && locked
+        && ((rpm > upshiftRpm(gear) && wheelRpm > 0.85 * upshiftRpm(gear) && m_timeInGear > 0.3)
+            || stuckOnLimiter))
     {
+        m_manualHold = 0;
+        m_limiterTime = 0;
         startShift(gear + 1, "up");
         return;
     }
@@ -370,6 +400,15 @@ void Ecu::updateGearbox(double dt, double rpm, double throttle, double vehicleSp
         if (stopped) {
             startShift(0, "down (stopped)");
         }
+        // Right after an upshift a gearbox holds the gear (hysteresis):
+        // an upshift through wheelspin lands under the downshift point once
+        // the tires grip, and dropping back a gear only spins them again.
+        // Pressing the pedal further (a kickdown) or lugging the engine
+        // ends the hold
+        const bool hold = m_lastShiftUp && m_timeInGear < 4.0
+            && throttle < m_throttleAtShift + 0.2
+            && roadRpm > 1.4 * m_settings.idleRpm;
+        if (hold) {}
         else if (wheelRpm < m_settings.downshift.sample(throttlePercent) && after < 0.9 * upshiftRpm(gear - 1)) {
             startShift(gear - 1, "down");
         }
