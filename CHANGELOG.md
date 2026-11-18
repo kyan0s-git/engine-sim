@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. Version
 0.2.0 is the first release of this fork; earlier versions were released by
 Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim).
 
-## [Unreleased]
+## [0.6.1] - 2026-11-18
 
 ### Gearbox
 - The automatic gearbox sat on the rev limiter, sometimes for seconds,
