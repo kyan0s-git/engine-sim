@@ -500,6 +500,86 @@ void EngineSimApplication::initialize() {
 #endif /* ATG_ENGINE_SIM_DISCORD_ENABLED */
 }
 
+void EngineSimApplication::governSimulationFrequency(double elapsed) {
+    // An engine whose physics need more than this computer can do in real
+    // time starves the sound (it crackles and drops out): heavy engines at
+    // high simulation frequencies, such as the F1 engine at 21 kHz, need
+    // well over a core. The frequency is lowered until the simulation keeps
+    // up, to no less than half the engine's own setting, and raised again
+    // when there is room. A frequency chosen in the settings is left alone.
+    if (m_iceEngine == nullptr || m_paused || m_ui.preferences().simulationFrequency > 0) {
+        m_overloadTime = m_headroomTime = 0;
+        return;
+    }
+    if (m_timePerStepEstimate <= 0) return;
+
+    const int engineFrequency = static_cast<int>(m_iceEngine->getSimulationFrequency());
+    const int frequency = m_simulator->getSimulationFrequency();
+    const double load = m_timePerStepEstimate * frequency * m_simulator->getSimulationSpeed();
+    const double dt = std::clamp(elapsed, 0.0, 0.1);
+
+    m_overloadTime = (load > 0.8) ? m_overloadTime + dt : 0.0;
+    m_headroomTime = (load < 0.45) ? m_headroomTime + dt : 0.0;
+
+    const int floor = std::max(engineFrequency / 2, std::min(engineFrequency, 8000));
+    auto round = [](double f) { return static_cast<int>(std::round(f / 500.0) * 500.0); };
+    if (m_overloadTime > 1.5 && frequency > floor) {
+        m_frequencyCap = std::max(floor, round(frequency * 0.65 / load));
+        m_simulator->setSimulationFrequency(m_frequencyCap);
+        m_overloadTime = 0;
+        m_timePerStepEstimate = 0;
+        m_ui.log("This computer can't simulate " + m_iceEngine->getName() + " at "
+            + std::to_string(frequency) + " Hz in real time, so the sound was breaking up. "
+            "The simulation frequency was lowered to " + std::to_string(m_frequencyCap)
+            + " Hz (Settings > Simulation sets it by hand).");
+    }
+    else if (m_headroomTime > 10.0 && m_frequencyCap > 0 && frequency < engineFrequency) {
+        m_frequencyCap = std::min(engineFrequency, round(frequency * 1.15));
+        if (m_frequencyCap >= engineFrequency) m_frequencyCap = 0;
+        m_simulator->setSimulationFrequency((m_frequencyCap > 0) ? m_frequencyCap : engineFrequency);
+        m_headroomTime = 0;
+        m_timePerStepEstimate = 0;
+    }
+}
+
+void EngineSimApplication::writeAudioTail(int16_t lastSample, int advanced) {
+    // The output is a looping buffer: when the simulation can't keep up
+    // (a heavy engine on a slow computer) playback runs past the written
+    // audio, and used to replay whatever was left there from a second
+    // earlier, which stuttered. Ahead of the write position the buffer
+    // holds a short fade from the last sample to zero and then silence, so
+    // a gap is a soft dropout instead. Only the silence the write moved
+    // past is renewed each time.
+    const int start = m_audioBuffer.m_writePointer;
+    for (int i = 0; i < AudioFadeLength; ++i) {
+        const double g = 0.5 + 0.5 * std::cos(constants::pi * (i + 1) / AudioFadeLength);
+        m_audioBuffer.writeSample(static_cast<int16_t>(lastSample * g), start, i);
+    }
+
+    int from = AudioFadeLength;
+    if (m_audioSilenceWritten > 0) {
+        from = std::max(from, m_audioSilenceWritten - advanced);
+    }
+    for (int i = from; i < AudioSilenceLength; ++i) {
+        m_audioBuffer.writeSample(0, start, i);
+    }
+    m_audioSilenceWritten = AudioSilenceLength;
+
+    auto copy = [&](int offset, int length) {
+        if (length <= 0) return;
+        SampleOffset size0, size1;
+        void *data0, *data1;
+        const SampleOffset at = m_audioBuffer.getBufferIndex(start, offset);
+        m_audioSource->LockBufferSegment(at, length, &data0, &size0, &data1, &size1);
+        m_audioBuffer.copyBuffer(reinterpret_cast<int16_t *>(data0), at, size0);
+        m_audioBuffer.copyBuffer(
+            reinterpret_cast<int16_t *>(data1), m_audioBuffer.getBufferIndex(at, size0), size1);
+        m_audioSource->UnlockBufferSegments(data0, size0, data1, size1);
+    };
+    copy(0, AudioFadeLength);
+    copy(from, AudioSilenceLength - from);
+}
+
 void EngineSimApplication::process(double elapsed) {
     m_simulator->setSimulationSpeed(m_requestedSimulationSpeed);
 
@@ -532,6 +612,7 @@ void EngineSimApplication::process(double elapsed) {
             ? 0.9 * m_timePerStepEstimate + 0.1 * timePerStep
             : timePerStep;
     }
+    governSimulationFrequency(elapsed);
 
     // Keep enough audio queued in the output buffer to cover the longest
     // recent gap between slices; a fixed 100 ms ran dry whenever frames took
@@ -555,6 +636,12 @@ void EngineSimApplication::process(double elapsed) {
         m_audioBuffer.m_writePointer = m_audioBuffer.getBufferIndex(safeWritePosition, (int)(44100 * 0.05));
         currentLead = m_audioBuffer.offsetDelta(safeWritePosition, m_audioBuffer.m_writePointer);
         maxWrite = m_audioBuffer.offsetDelta(m_audioBuffer.m_writePointer, targetWritePosition);
+
+        // Fade back in rather than starting mid-waveform (a click), and lay
+        // a fresh silent tail ahead of the new write position
+        m_audioFadeIn = 0;
+        m_audioSilenceWritten = 0;
+        ++m_audioUnderruns;
     }
 
     if (currentLead > newLead) {
@@ -571,6 +658,11 @@ void EngineSimApplication::process(double elapsed) {
         : 0;
 
     for (SampleOffset i = 0; i < (SampleOffset)readSamples && i < maxWrite; ++i) {
+        if (m_audioFadeIn < AudioFadeLength) {
+            const double g = 0.5 - 0.5 * std::cos(constants::pi * m_audioFadeIn / AudioFadeLength);
+            samples[i] = static_cast<int16_t>(samples[i] * g);
+            ++m_audioFadeIn;
+        }
         const int16_t sample = samples[i];
         m_ui.addAudioSample(sample / (float)(INT16_MAX));
 
@@ -594,6 +686,8 @@ void EngineSimApplication::process(double elapsed) {
 
         m_audioSource->UnlockBufferSegments(data0, size0, data1, size1);
         m_audioBuffer.commitBlock(readSamples);
+
+        writeAudioTail(samples[readSamples - 1], readSamples);
     }
 
     m_ui.addFrameTiming(
@@ -883,6 +977,12 @@ void EngineSimApplication::run() {
                     1E3 * profileSum.present / n, stepSum / n,
                     1E3 * profileMax.total, 1E3 * profileMax.ui, 1E3 * profileMax.simulation,
                     1E3 * profileMax.scene, 1E3 * profileMax.present);
+                if (m_simulator != nullptr) {
+                    std::printf("  simulation %d Hz, audio queue %.0f ms, %d underruns\n",
+                        m_simulator->getSimulationFrequency(),
+                        1E3 * m_simulator->getSynthesizerInputLatency(),
+                        m_audioUnderruns);
+                }
                 std::fflush(stdout);
                 lastProfileLog = t5;
                 profileSum = profileMax = AppUi::FrameProfile();
@@ -1069,7 +1169,9 @@ void EngineSimApplication::applyPreferences() {
             m_simulator->setSimulationFrequency(preferences.simulationFrequency);
         }
         else if (m_iceEngine != nullptr) {
-            m_simulator->setSimulationFrequency(m_iceEngine->getSimulationFrequency());
+            int frequency = static_cast<int>(m_iceEngine->getSimulationFrequency());
+            if (m_frequencyCap > 0) frequency = std::min(frequency, m_frequencyCap);
+            m_simulator->setSimulationFrequency(frequency);
         }
     }
 }
@@ -1197,6 +1299,8 @@ void EngineSimApplication::loadEngine(
     m_viewParameters.Layer1 = engine->getMaxDepth();
     engine->calculateDisplacement();
 
+    m_frequencyCap = 0;
+    m_overloadTime = m_headroomTime = 0;
     m_simulator->setSimulationFrequency(engine->getSimulationFrequency());
     applyPreferences();
 

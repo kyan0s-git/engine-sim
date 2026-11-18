@@ -265,6 +265,20 @@ class EngineSimApplication {
 
         bool m_stepRequested = false;
         double m_timePerStepEstimate = 0;   // [s]
+
+        // Output underrun handling (see writeAudioTail)
+        static constexpr int AudioFadeLength = 256;             // [samples]
+        static constexpr int AudioSilenceLength = 44100 * 45 / 100; // [samples]
+        int m_audioFadeIn = AudioFadeLength;
+        int m_audioSilenceWritten = 0;
+        int m_audioUnderruns = 0;
+        void writeAudioTail(int16_t lastSample, int advanced);
+
+        // Simulation frequency governor (see governSimulationFrequency)
+        int m_frequencyCap = 0;             // [Hz], 0: the engine's own
+        double m_overloadTime = 0;          // [s]
+        double m_headroomTime = 0;          // [s]
+        void governSimulationFrequency(double elapsed);
         double m_requestedSimulationSpeed = 1.0;
         float m_appliedVolume = -1.0f;
         SimulationObject::ViewParameters m_viewParameters;
