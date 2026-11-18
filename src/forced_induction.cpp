@@ -430,10 +430,17 @@ void ForcedInduction::process(double dt) {
         else {
             processPositiveDisplacement(dt, mix, T1);
 
-            // Bypass valve: recirculates the delivery at part throttle
+            // Bypass valve: recirculates the delivery at part throttle.
+            // It opens with manifold vacuum, and also when the throttle
+            // holds back more than a little of the charge pressure: opened
+            // on vacuum alone, it stayed shut with the manifold near
+            // atmospheric at part throttle and the blower dead-headed
+            // against the throttle (190 kPa of boost at half throttle, more
+            // than at full)
             if (m_bypassValve) {
-                const double target =
-                    clamp((0.9 * Ambient - p_plenum) / (0.2 * Ambient), 0.0, 1.0);
+                const double vacuum = (0.9 * Ambient - p_plenum) / (0.2 * Ambient);
+                const double restricted = (m_charge.pressure() - p_plenum - 0.1 * Ambient) / (0.2 * Ambient);
+                const double target = clamp(std::max(vacuum, restricted), 0.0, 1.0);
                 m_bypass = approach(m_bypass, target, dt, 0.05);
                 if (m_bypass > 0) {
                     m_charge.flow(m_bypassK * m_bypass, dt, Ambient, AmbientTemperature, mix);

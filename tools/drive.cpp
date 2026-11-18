@@ -55,6 +55,7 @@ namespace {
         bool rev = false;           // free-revving routine instead of a launch
         int perspective = 0;        // 0 outside, 1 cockpit, 2 engine bay
         float crackle = -1;         // overrun pops, -1 = default
+        float fiVolume = -1;        // turbo/supercharger sound, -1 = default
     };
 
     // Offline audio: rendered after every frame instead of by the audio
@@ -231,11 +232,12 @@ int main(int argc, char *argv[]) {
         else if (arg == "--rev") options.rev = true;
         else if (arg == "--perspective" && value) options.perspective = std::atoi(argv[++i]);
         else if (arg == "--crackle" && value) options.crackle = static_cast<float>(std::atof(argv[++i]));
+        else if (arg == "--fi-volume" && value) options.fiVolume = static_cast<float>(std::atof(argv[++i]));
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--auto] [--preset economy|performance|race] [--tune <file>]\n"
                 "          [--shift <rpm>] [--launch <rpm>] [--anti-lag] [--time <s>] [--trace <s>] [--brake-at <s>]\n"
-                "          [--wav <file>] [--rev] [--perspective 0|1|2] [--crackle <0-1>] <script.mr>\n",
+                "          [--wav <file>] [--rev] [--perspective 0|1|2] [--crackle <0-1>] [--fi-volume <x>] <script.mr>\n",
                 argv[0]);
             return 0;
         }
@@ -277,6 +279,7 @@ int main(int argc, char *argv[]) {
         audio.convolution = static_cast<float>(engine->getInitialConvolution());
         audio.perspective = options.perspective;
         if (options.crackle >= 0) audio.overrunCrackle = options.crackle;
+        if (options.fiVolume >= 0) audio.forcedInductionVolume = options.fiVolume;
         simulator->synthesizer().setAudioParameters(audio);
     }
     else {
@@ -348,7 +351,8 @@ int main(int argc, char *argv[]) {
     if (options.rev) {
         // Free revving in neutral: blips, a pull against the limiter, lifts
         // (overrun and blow-off), part throttle, idle. One line per 0.25 s:
-        // time, phase, rpm, throttle, boost
+        // time, phase, rpm, throttle, boost [kPa], shaft [rpm], whine, flow,
+        // blow-off and surge levels
         transmission->changeGear(-1);
         struct Phase { const char *name; double throttle; double seconds; };
         const double limiterHold = 2.5;
@@ -368,9 +372,13 @@ int main(int argc, char *argv[]) {
                 if (options.trace > 0 && clock >= next) {
                     next += options.trace;
                     const ForcedInduction *fi = engine->getForcedInduction();
-                    std::printf("%.2f,%s,%.0f,%.2f,%.1f,%.0f\n", clock, phase.name, engine->getRpm(), phase.throttle,
+                    std::printf("%.2f,%s,%.0f,%.2f,%.1f,%.0f,%.3f,%.3f,%.3f,%.3f\n", clock, phase.name, engine->getRpm(), phase.throttle,
                         fi != nullptr ? fi->getBoost() / 1000.0 : 0.0,
-                        fi != nullptr ? fi->getShaftSpeed() * 60.0 / (2 * 3.14159265358979) : 0.0);
+                        fi != nullptr ? fi->getShaftSpeed() * 60.0 / (2 * 3.14159265358979) : 0.0,
+                        fi != nullptr ? fi->getWhineLevel() : 0.0,
+                        fi != nullptr ? fi->getFlowLevel() : 0.0,
+                        fi != nullptr ? fi->getBlowoffLevel() : 0.0,
+                        fi != nullptr ? fi->getSurgeLevel() : 0.0);
                 }
             });
         }

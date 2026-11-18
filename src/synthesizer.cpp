@@ -119,6 +119,13 @@ void Synthesizer::initialize(const Parameters &p) {
     m_valveBand.set(3800.0f, 1.3f, fs);
     m_whistleDrift.set(3.0f, fs);
     m_whistlePulse.set(600.0f, fs);
+    m_hissLow.set(1300.0f, fs);
+    m_hissBand.set(3000.0f, 0.7f, fs);
+    m_turbineLow1.set(1700.0f, fs);
+    m_turbineLow2.set(1700.0f, fs);
+    m_blowoffFollow = 1.0f - std::exp(-1.0f / (0.2f * fs));
+    m_whineSmoothing = 1.0f - std::exp(-1.0f / (0.1f * fs));
+    m_spoolMemoryRelease = std::exp(-1.0f / (0.6f * fs));
     m_raspBand.set(2400.0f, 0.6f, fs);
     m_cabinBoom.set(95.0f, 1.3f, fs);
     m_cabinLow1.set(1500.0f, fs);
@@ -580,6 +587,13 @@ float Synthesizer::Bandpass::process(float x) {
 // [5] external wastegate venting, [6] mode (10 * type + blow-off type;
 // types 1 turbo, 2 Roots, 3 twin-screw, 4 centrifugal; blow-off 0 vented,
 // 1 recirculating, 2 none)
+namespace {
+    float smoothstep(float a, float b, float x) {
+        const float t = std::clamp((x - a) / (b - a), 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+}
+
 void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters) {
     if (m_auxChannelCount < ForcedInductionChannels) return;
 
@@ -610,44 +624,56 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
         const float surge = std::max(aux[4][j], 0.0f);
         const float wastegate = std::max(aux[5][j], 0.0f);
 
-        // Filter centres follow the shaft speed; updated every 32 samples
+        // Filter centres follow the shaft speed; updated every 16 samples
         float tonal = 0;
         if (type == 1 || type == 4) {
-            // Spool whistle: from below 1 kHz at idle to 4-6 kHz on boost.
-            // A real one is mostly air: a narrow band of rushing noise at
-            // the whistle pitch (two resonances in series, like blowing
-            // across a bottle) with a weaker band 1.5 times higher from the
-            // inducer, and only a faint tone whose pitch wanders. A turbo's
-            // turbine is driven by the exhaust pulses, so it pulses with
-            // the engine; a centrifugal supercharger doesn't.
-            const float pitch = std::clamp(500.0f + ((type == 1) ? 3.0f : 2.4f) * shaft, 400.0f, 9000.0f);
+            // Turbocharger (and centrifugal supercharger) sound, as heard on
+            // recordings of real cars:
+            // - the whistle: a single narrow band of rushing air at a pitch
+            //   that follows the shaft, from about 1.5 kHz as the turbo
+            //   wakes up to 5-6 kHz on full boost, with a faint wandering
+            //   tone in it and a much weaker inharmonic shimmer above (the
+            //   blades). It is silent until the turbo is really working:
+            //   at idle and light cruise a real turbo isn't heard. (It was
+            //   two tones a fifth apart, which sounded like a chord on a
+            //   slide whistle, and was heard at idle.)
+            // - the breathing: broadband hiss from the compressor inlet
+            //   that grows with the air flowing through it
+            const float k = (type == 1) ? 3.6f : 2.8f;
+            const float pitch = std::clamp(900.0f + k * shaft, 900.0f, 9500.0f);
             if ((m_fiCounter++ & 15) == 0) {
-                m_whistleBand.set(pitch, 11.0f, fs);
-                m_whistleBand2.set(pitch, 11.0f, fs);
-                m_inducerBand.set(1.5f * pitch, 14.0f, fs);
-                m_whooshBand.set(500.0f + 0.35f * pitch, 0.9f, fs);
+                m_whistleBand.set(pitch, 7.0f, fs);
+                m_inducerBand.set(2.37f * pitch, 12.0f, fs);
             }
 
-            const float air = m_whistleBand2.process(m_whistleBand.process(noise()))
-                + 0.35f * m_inducerBand.process(noise());
+            const float air = m_whistleBand.process(noise());
             m_whistleRms += (air * air - m_whistleRms) * (1.0f / (0.05f * fs));
-            const float airNormalized = air / std::sqrt(std::max(m_whistleRms, 1e-12f)) * 0.7f;
+            const float airNormalized = air / std::sqrt(std::max(m_whistleRms, 1e-12f));
 
-            // The tone's pitch drifts by about half a percent
+            // The tone's pitch drifts by a few tenths of a percent
             const float drift = m_whistleDrift.process(noise());
-            m_whinePhase += twoPi * pitch * (1.0 + 0.6 * drift) / fs;
+            m_whinePhase += twoPi * pitch * (1.0 + 0.3 * drift) / fs;
             if (m_whinePhase > twoPi) m_whinePhase -= twoPi;
             const float tone = static_cast<float>(std::sin(m_whinePhase));
+            const float shimmer = (2.37f * pitch < 0.45f * fs) ? m_inducerBand.process(noise()) * 6.0f : 0.0f;
 
-            // Pulsing with the exhaust (turbochargers only)
+            // A turbo's turbine is driven by the exhaust pulses, so its
+            // whistle flutters a little with the engine
             float pulse = 1.0f;
             if (type == 1) {
                 const float ratio = std::clamp(std::abs(m_mixBuffer[j]) / std::max(envelope, 1e-6f), 0.0f, 3.0f);
-                pulse = 0.55f + 0.45f * m_whistlePulse.process(ratio);
+                pulse = 0.85f + 0.15f * m_whistlePulse.process(ratio);
             }
 
-            tonal += 1.6f * whine * pulse * (0.75f * airNormalized + 0.25f * tone);
-            tonal += 0.45f * flow * flow * m_whooshBand.process(noise());
+            // The whistle is loudest with air going through the compressor:
+            // when the throttle shuts, it falls away and spools down
+            const float spool = smoothstep(0.04f, 0.6f, whine) * (0.3f + 0.7f * smoothstep(0.08f, 0.4f, flow));
+            tonal += 0.42f * spool * pulse * (0.65f * airNormalized + 0.3f * tone + 0.12f * shimmer);
+
+            // Inlet hiss: high-passed noise, peaking around 3 kHz
+            const float r = noise();
+            const float hiss = m_hissBand.process(r - m_hissLow.process(r));
+            tonal += 0.3f * std::pow(flow, 1.5f) * hiss;
         }
         else {
             // Supercharger rotor whine: lobe passing frequency with harmonics
@@ -680,16 +706,32 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
             bursts += 2.0f * surge * gate * m_flutterBand.process(noise());
         }
 
-        // Blow-off: a sharp vented "pssh" or a soft recirculating whoosh
-        if (blowoff > 0.001f) {
+        // Blow-off: a sharp vented "pssh" or a soft recirculating whoosh.
+        // The valve stays open while the throttle is shut and the spinning
+        // compressor keeps pumping air through it, so its flow alone hissed
+        // on through every overrun and at idle; what is heard is the burst
+        // of boost escaping when it opens, so the sound follows the rise
+        // in flow above its recent level (a burst of a few tenths of a second)
+        // (it starts at the valve's flow, so that an engine that idles
+        // with the valve open doesn't puff when the sound starts)
+        if (m_blowoffSlow < 0) m_blowoffSlow = blowoff;
+        m_blowoffSlow += (blowoff - m_blowoffSlow) * m_blowoffFollow;
+        // Only boost makes the burst: the valve opening without boost
+        // behind it (an engine starting, or a blip that never built any)
+        // is silent
+        m_whineSmooth += (whine - m_whineSmooth) * m_whineSmoothing;
+        m_spoolMemory = std::max(m_whineSmooth, m_spoolMemory * m_spoolMemoryRelease);
+        const float burst = std::clamp((blowoff - m_blowoffSlow) * 1.6f, 0.0f, 1.0f)
+            * smoothstep(0.08f, 0.4f, m_spoolMemory);
+        if (burst > 0.001f) {
             if ((m_fiCounter & 31) == 2) {
-                m_blowoffBand1.set(blowoffType == 1 ? 1100.0f : 2600.0f, blowoffType == 1 ? 1.2f : 0.7f, fs);
-                m_blowoffBand2.set(6500.0f, 1.3f, fs);
+                m_blowoffBand1.set(blowoffType == 1 ? 1200.0f : 3200.0f, blowoffType == 1 ? 1.0f : 0.8f, fs);
+                m_blowoffBand2.set(7000.0f, 1.1f, fs);
             }
             const float r = noise();
             bursts += (blowoffType == 1)
-                ? 0.7f * blowoff * m_blowoffBand1.process(r)
-                : blowoff * (1.6f * m_blowoffBand1.process(r) + 0.8f * m_blowoffBand2.process(r));
+                ? 2.0f * burst * m_blowoffBand1.process(r)
+                : burst * (4.0f * m_blowoffBand1.process(r) + 1.6f * m_blowoffBand2.process(r));
         }
 
         // External wastegate venting through its own pipe
@@ -699,6 +741,14 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
         }
 
         m_layerBuffer[j] += volume * (tonal * (1.1f * envelope + 0.4f * floor) + bursts * reference * 1.5f);
+
+        // The turbine sits in the exhaust and soaks up the sharp edge of
+        // each pulse: a turbocharged engine's exhaust is smoother and
+        // duller than the same engine's without one
+        if (type == 1) {
+            const float x = m_mixBuffer[j];
+            m_mixBuffer[j] = 0.45f * x + 0.7f * m_turbineLow2.process(m_turbineLow1.process(x));
+        }
     }
 }
 

@@ -189,6 +189,11 @@ class Synthesizer {
         Bandpass m_blowoffBand1, m_blowoffBand2, m_wastegateBand;
         Bandpass m_whistleBand2, m_inducerBand;
         float m_whistleRms = 0;
+        Bandpass m_hissBand;
+        OnePole m_hissLow, m_turbineLow1, m_turbineLow2;
+        float m_blowoffSlow = -1, m_blowoffFollow = 0;
+        float m_spoolMemory = 0, m_spoolMemoryRelease = 1;
+        float m_whineSmooth = 0, m_whineSmoothing = 0;
         const float *m_auxPointers[AuxChannels] = {};
 
         // Engine layers and listener perspective

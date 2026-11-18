@@ -163,7 +163,9 @@ namespace {
             d.exhaustLength = 1.0; d.exhaustDiameter = 65 * mm;
             d.flywheelMass = 1.0;
             d.lambda = 1.0;
-            d.exhaustSound = "minimal_muffling_03";
+            // The turbine and energy recovery smooth the exhaust: the
+            // rawest response rang metallically at these engine speeds
+            d.exhaustSound = "mild_exhaust_0";
             d.vehicleMass = 800;
             d.externalWastegate = true;
             d.tireFriction = 1.6;
