@@ -91,8 +91,7 @@ ForcedInduction::ForcedInduction() {
     m_whistlePitch = 1.0;
     m_surge = 0;
     m_flutter = 0;
-    m_flutterDepth = 0;
-    m_flutterPhase = 0;
+    m_surging = false;
     m_wastegateIntegral = 0;
     m_boostSensor = 0;
     m_boostRate = 0;
@@ -152,8 +151,7 @@ void ForcedInduction::initialize(const Parameters &params) {
     m_maxCompressorFlow = clamp(params.compressorFlow, 0.01, 3.0);
     m_surge = 0;
     m_flutter = 0;
-    m_flutterDepth = 0;
-    m_flutterPhase = 0;
+    m_surging = false;
     m_wastegateIntegral = 0;
     m_boostSensor = 0;
     m_boostRate = 0;
@@ -432,6 +430,7 @@ void ForcedInduction::process(double dt) {
         for (int i = 0; i < m_unitCount; ++i) {
             if (m_units[i].active) ++activeUnits;
         }
+        updateSurge();
 
         for (int i = 0; i < m_unitCount; ++i) {
             Unit &unit = m_units[i];
@@ -440,7 +439,8 @@ void ForcedInduction::process(double dt) {
             unit.compressorPower = 0;
 
             if (unit.active) {
-                processCentrifugal(unit, dt, 1.0, mix, T1);
+                if (m_surging) processSurge(unit, dt, 1.0 / std::max(activeUnits, 1), mix, T1);
+                else processCentrifugal(unit, dt, 1.0, mix, T1);
                 const double turbineEnergy = m_turbineEnergy / std::max(activeUnits, 1);
                 unit.turbinePower = turbineEnergy / dt;
                 unit.energy += turbineEnergy;
@@ -463,7 +463,9 @@ void ForcedInduction::process(double dt) {
         if (m_type == Type::Centrifugal) {
             Unit &unit = m_units[0];
             unit.omega = std::min(crankSpeed() * m_driveRatio, m_maxSpeed);
-            processCentrifugal(unit, dt, 1.0, mix, T1);
+            updateSurge();
+            if (m_surging) processSurge(unit, dt, 1.0, mix, T1);
+            else processCentrifugal(unit, dt, 1.0, mix, T1);
             unit.compressorPower += m_bearingLoss * unit.omega * unit.omega;
         }
         else {
@@ -506,65 +508,111 @@ void ForcedInduction::process(double dt) {
 
     m_blowoffFlowRate = approach(m_blowoffFlowRate, std::max(vented, 0.0) / dt, dt, 0.02);
 
-    processFlutter(dt, mix);
+    // Reverse flow through the wheel while surging, for the sound
+    double reverse = 0;
+    if (m_surging) {
+        for (int i = 0; i < m_unitCount; ++i) {
+            if (m_units[i].active) reverse += std::max(-m_units[i].ductFlow, 0.0);
+        }
+    }
+    m_flutter = clamp(reverse / (0.15 * std::max(m_maxCompressorFlow, 1e-3)), 0.0, 1.0);
 
     m_charge.dissipateExcessVelocity();
     m_charge.updateVelocity(dt, 0.5);
 }
 
-void ForcedInduction::processFlutter(double dt, const GasSystem::Mix &mix) {
-    // Compressor surge ("flutter"): with high pressure behind it and almost
-    // no air going through it for its speed (the throttle shut and nothing
-    // to vent the charge), a compressor wheel stalls. The air rushes back
-    // out through it in bursts, the stall clears, the pressure builds and
-    // it stalls again, 10 to 25 times a second, each burst braking the
-    // wheel: the "stu-tu-tu" of a turbo without a blow-off valve. The
-    // flow model alone never reversed (the spinning wheel holds the
-    // pressure), so this was never heard.
-    double depth = 0;
+// Compressor surge ("flutter"), after Greitzer's model of surge in
+// compression systems. Closing the throttle with nothing to vent the charge
+// takes the flow through the compressor down to where its pressure rise
+// curve turns over (the surge line): left of it the compressor can't hold
+// the charge, the flow collapses and reverses, the charge blows down back
+// through the wheel, and once its pressure has fallen the wheel takes hold
+// again and refills it, over and over. What sets the pace is the air in the
+// ducts either side of the wheel, which has to be stopped and accelerated
+// each way, against the charge volume acting as a spring: about ten to
+// twenty cycles a second on a car, slowing and dying away as the bursts
+// brake the wheel and the pressure it can make falls.
+void ForcedInduction::updateSurge() {
     const bool centrifugal = isTurbocharger() || m_type == Type::Centrifugal;
-    if (centrifugal && m_maxSpeed > 0 && m_maxCompressorFlow > 0) {
-        double flow = 0;
-        for (int i = 0; i < m_unitCount; ++i) {
-            if (m_units[i].active) flow += m_units[i].compressorFlow;
-        }
-        const double flowShare = std::abs(flow) * units::AirMolecularMass / m_maxCompressorFlow;
-        const double speedShare = clamp(m_units[0].omega / (0.35 * m_maxSpeed), 0.0, 1.0);
-        const double pr = m_charge.pressure() / Ambient;
-
-        // Past the surge line: a high pressure ratio with little flow for
-        // the wheel's speed; an open blow-off valve keeps it away
-        depth = clamp((pr - 1.12) / 0.25, 0.0, 1.0)
-            * clamp(1.0 - flowShare / (0.3 * speedShare + 0.02), 0.0, 1.0)
-            * speedShare
-            * (1.0 - clamp(m_blowoff * 3.0, 0.0, 1.0));
+    if (!centrifugal || m_maxCompressorFlow <= 0) {
+        m_surging = false;
+        return;
     }
-    m_flutterDepth += (depth - m_flutterDepth) * std::min(1.0, dt / 0.03);
 
-    double gate = 0;
-    if (m_flutterDepth > 0.02) {
-        // Faster while the pressure is high, slowing as it bleeds away
-        m_flutterPhase += dt * (9.0 + 16.0 * m_flutterDepth);
-        m_flutterPhase -= std::floor(m_flutterPhase);
-        constexpr double Burst = 0.3;   // share of each cycle the air flows back
-        if (m_flutterPhase < Burst) {
-            gate = std::sin(constants::pi * m_flutterPhase / Burst);
+    double flow = 0;    // [kg/s]
+    for (int i = 0; i < m_unitCount; ++i) {
+        if (m_units[i].active) flow += m_surging ? m_units[i].ductFlow : m_units[i].compressorFlow * units::AirMolecularMass;
+    }
 
-            // The air going back out through the wheel, and the wheel
-            // slowed by it
-            m_charge.flow(m_blowoffK * 0.6 * m_flutterDepth * gate, dt, Ambient, AmbientTemperature, mix);
-            const double drag = std::exp(-dt * 4.0 * m_flutterDepth * gate);
+    const double limit = centrifugalSourcePressureRatio(m_units[0].omega);
+    const double pr = m_charge.pressure() / Ambient;
+    const double surgeFlow = 0.5 * (limit - 1.0) * m_maxCompressorFlow;
+    const bool venting = (m_blowoff > 0.1);
+
+    if (!m_surging) {
+        // Past the surge line: near the most the wheel can make, with less
+        // flow than the line allows at that pressure ratio
+        if (!venting && limit > 1.2 && pr > 1.15 && pr > 1.0 + 0.95 * (limit - 1.0) && flow < surgeFlow) {
+            m_surging = true;
             for (int i = 0; i < m_unitCount; ++i) {
-                if (!m_units[i].active || !isTurbocharger()) continue;
-                m_units[i].energy *= drag;
-                m_units[i].omega = std::sqrt(2 * std::max(m_units[i].energy, 0.0) / m_inertia);
+                m_units[i].ductFlow = m_units[i].compressorFlow * units::AirMolecularMass;
             }
         }
     }
     else {
-        m_flutterPhase = 0.6;   // the first burst comes at once
+        // Back to steady flow: the throttle opened (the flow stays well
+        // right of the line), the blow-off opened, or the wheel has slowed
+        // until it makes too little pressure to surge
+        if (venting || limit < 1.1 || flow > 2.0 * surgeFlow) {
+            m_surging = false;
+        }
     }
-    m_flutter = m_flutterDepth * gate;
+}
+
+void ForcedInduction::processSurge(Unit &unit, double dt, double share, const GasSystem::Mix &mix, double T1) {
+    const double limit = centrifugalSourcePressureRatio(unit.omega);
+    const double peakRise = (limit - 1.0) * Ambient;                     // at the surge line [Pa]
+    const double peakFlow = std::max(0.5 * (limit - 1.0) * m_maxCompressorFlow * share, 1e-4);   // [kg/s]
+
+    // Pressure rise against flow: from the shut-off head at no flow up to
+    // the peak at the surge line, falling beyond it; with the flow
+    // reversed the wheel resists it like a restriction
+    constexpr double ShutOff = 0.8;
+    const double x = unit.ductFlow / peakFlow;
+    double rise;
+    if (x < 0) rise = ShutOff + 0.8 * x * x;
+    else if (x < 1) rise = ShutOff + (1 - ShutOff) * x * x * (3 - 2 * x);
+    else rise = std::max(1.0 - 0.5 * (x - 1) * (x - 1), -1.0);
+    rise *= peakRise;
+
+    // The air in the ducts (inlet pipe, compressor, charge pipe) is
+    // accelerated by the difference between what the wheel makes and the
+    // charge pressure
+    const double inducerArea = constants::pi * std::pow(0.7 * m_tipRadius, 2.0);
+    constexpr double DuctLength = 1.5;     // [m]
+    const double chargeRise = m_charge.pressure() - Ambient;
+    unit.ductFlow += dt * (inducerArea / DuctLength) * (rise - chargeRise);
+    unit.ductFlow = clamp(unit.ductFlow, -2.0 * m_maxCompressorFlow, 2.0 * m_maxCompressorFlow);
+
+    const double moles = unit.ductFlow * dt / units::AirMolecularMass;
+    if (moles > 0) {
+        const double pr = std::max(m_charge.pressure() / Ambient, 1.0);
+        const double T2 = AmbientTemperature
+            * (1.0 + (std::pow(pr, Exponent) - 1.0) / m_compressorEfficiency);
+        const double T_in = T2 - m_intercoolerEffectiveness * (T2 - AmbientTemperature)
+            + (T1 - AmbientTemperature);
+        m_charge.inject(moles, T_in, mix);
+    }
+    else if (moles < 0) {
+        m_charge.vent(-moles);
+    }
+
+    unit.compressorFlow = moles / dt;
+
+    // The wheel works on the air either way: forward it compresses it,
+    // reversed it churns against it
+    const double U = unit.omega * m_tipRadius;
+    unit.compressorPower = std::abs(unit.ductFlow) * m_slip * U * U;
 }
 
 void ForcedInduction::apply(atg_scs::SystemState *system) {

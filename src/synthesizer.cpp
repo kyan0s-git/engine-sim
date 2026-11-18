@@ -131,6 +131,7 @@ void Synthesizer::initialize(const Parameters &p) {
     m_screamerLow.set(220.0f, fs);
     m_blowoffDecay = std::exp(-1.0f / (0.45f * fs));
     m_spoolMemoryRelease = std::exp(-1.0f / (0.6f * fs));
+    m_envelopeMemoryRelease = std::exp(-1.0f / (1.5f * fs));
     m_raspBand.set(2400.0f, 0.6f, fs);
     m_cabinBoom.set(95.0f, 1.3f, fs);
     m_cabinLow1.set(1500.0f, fs);
@@ -632,10 +633,14 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
     const double twoPi = 2 * 3.14159265358979323846;
 
     for (int j = 0; j < n; ++j) {
-        // The sounds follow the loudness of the engine (with a floor so that
-        // a blow-off on a quiet overrun is still heard)
+        // The sounds follow the loudness of the engine. The blow-off and
+        // flutter come when the throttle has just shut and the exhaust has
+        // gone quiet, but they are the boost built under load escaping, so
+        // they follow how loud the engine was over the last second or so
+        // (with a floor so that one on a quiet overrun is still heard)
         const float envelope = m_envelope[j];
-        const float reference = 0.8f * envelope + floor;
+        m_envelopeMemory = std::max(envelope, m_envelopeMemory * m_envelopeMemoryRelease);
+        const float reference = 0.8f * std::max(envelope, 0.7f * m_envelopeMemory) + floor;
 
         const float shaft = std::max(aux[0][j], 0.0f);
         const float whine = std::max(aux[1][j], 0.0f);
@@ -718,18 +723,42 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
 
         float bursts = 0;
 
-        // Compressor surge without a blow-off valve ("flutter"): the
-        // simulation pulses the level with each burst of air going back
-        // out through the wheel; each is an airy "chu" with a hollow low
-        // body from the intake pipe. (The level used to be smooth and the
-        // pulsing was made up here, and it never got past zero.)
-        if (surge > 0.003f) {
+        // Compressor surge without a blow-off valve ("flutter"). The
+        // simulation gives the air flowing back out through the wheel on
+        // each surge cycle (its pace comes from the ducts and the charge
+        // volume); what is heard is that air rushing back out of the inlet,
+        // and the pressure pulse it sends down the inlet pipe as it starts,
+        // a hollow thump. The whistle above is chopped by the same cycles,
+        // because it follows the flow through the compressor. The
+        // pronounced style adds a ringing note to each burst.
+        if (surge > 0.002f || std::abs(m_flutterRing) > 1e-4f) {
             if ((m_fiCounter & 31) == 1) {
-                m_flutterBand.set(1700.0f, 1.1f, fs);
-                m_flutterLow.set(420.0f, 1.6f, fs);
+                const float ring = std::clamp(380.0f + 0.3f * shaft, 380.0f, 1400.0f);
+                m_flutterTone.set(ring, 9.0f, fs);
+                m_flutterTone2.set(2.2f * ring, 7.0f, fs);
+                m_flutterLow.set(190.0f, 2.0f, fs);
+                m_flutterBand.set(2200.0f, 0.8f, fs);
             }
+            // How fast the backflow is building (per 5 ms)
+            const float rise = std::max(surge - m_flutterLast, 0.0f) * 0.005f * fs;
+            m_flutterLast = surge;
             const float r = noise();
-            bursts += surge * (2.4f * m_flutterBand.process(r) + 1.6f * m_flutterLow.process(r));
+
+            bursts += 3.5f * surge * m_flutterBand.process(r)
+                + 22.0f * m_flutterLow.process(rise * r);
+
+            if (parameters.flutterStyle == 1) {
+                const float click = std::min(rise, 1.0f) * ((r > 0) ? 1.0f : -1.0f);
+                const float excitation = click + 0.5f * surge * noise();
+                m_flutterRing = m_flutterTone.process(excitation * 6.0f);
+                bursts += 6.0f * m_flutterRing + 2.0f * m_flutterTone2.process(excitation * 4.0f);
+            }
+            else {
+                m_flutterRing = 0;
+            }
+        }
+        else {
+            m_flutterLast = surge;
         }
 
         // Blow-off: a sharp vented "pssh" or a soft recirculating whoosh.

@@ -439,6 +439,20 @@ double GasSystem::flowRate(
     return flowRate * k_flow;
 }
 
+double GasSystem::vent(double dn) {
+    const double starting_n = n();
+    if (dn <= 0 || starting_n <= 0) return 0;
+
+    const double fraction = std::fmin(dn / starting_n, 0.9);
+    dn = fraction * starting_n;
+    if (isEngineering()) loseN(dn, kineticEnergy() * enthalpyOutflowFraction(fraction) / dn);
+    else loseN(dn, kineticEnergyPerMol());
+
+    m_state.momentum[0] -= fraction * m_state.momentum[0];
+    m_state.momentum[1] -= fraction * m_state.momentum[1];
+    return dn;
+}
+
 double GasSystem::loseN(double dn, double E_k_per_mol) {
     m_state.E_k -= E_k_per_mol * dn;
     m_state.n_mol -= dn;

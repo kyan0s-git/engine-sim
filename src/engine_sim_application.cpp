@@ -882,12 +882,14 @@ void EngineSimApplication::run() {
                 if (audio.perspective != preferences.listenerPosition
                     || audio.intakeVolume != preferences.intakeVolume
                     || audio.mechanicalVolume != preferences.mechanicalVolume
-                    || audio.overrunCrackle != preferences.overrunCrackle)
+                    || audio.overrunCrackle != preferences.overrunCrackle
+                    || audio.flutterStyle != preferences.flutterStyle)
                 {
                     audio.perspective = preferences.listenerPosition;
                     audio.intakeVolume = preferences.intakeVolume;
                     audio.mechanicalVolume = preferences.mechanicalVolume;
                     audio.overrunCrackle = preferences.overrunCrackle;
+                    audio.flutterStyle = preferences.flutterStyle;
                     m_simulator->synthesizer().setAudioParameters(audio);
                 }
             }

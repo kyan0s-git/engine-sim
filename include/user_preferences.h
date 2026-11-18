@@ -39,6 +39,7 @@ struct UserPreferences {
     float intakeVolume = 1.0f;
     float mechanicalVolume = 1.0f;
     float overrunCrackle = 0.35f;
+    int flutterStyle = 0;               // 0 realistic, 1 pronounced
 
     // Driving: "progressive" (stock), "gentle", "linear", "sport" pedal
     // maps, or "direct" (the pedal moves the throttle plate)

@@ -47,6 +47,7 @@ bool UserPreferences::load(const std::string &path) {
         else if (key == "intake_volume") intakeVolume = std::clamp((float)std::atof(value.c_str()), 0.0f, 2.0f);
         else if (key == "mechanical_volume") mechanicalVolume = std::clamp((float)std::atof(value.c_str()), 0.0f, 2.0f);
         else if (key == "overrun_crackle") overrunCrackle = std::clamp((float)std::atof(value.c_str()), 0.0f, 1.0f);
+        else if (key == "flutter_style") flutterStyle = std::clamp(std::atoi(value.c_str()), 0, 1);
         else if (key == "pedal_response") {
             if (value == "progressive" || value == "gentle" || value == "linear" || value == "sport" || value == "direct") pedalResponse = value;
         }
@@ -83,6 +84,7 @@ bool UserPreferences::save(const std::string &path) const {
         << "intake_volume=" << intakeVolume << "\n"
         << "mechanical_volume=" << mechanicalVolume << "\n"
         << "overrun_crackle=" << overrunCrackle << "\n"
+        << "flutter_style=" << flutterStyle << "\n"
         << "pedal_response=" << pedalResponse << "\n"
         << "mute_when_inactive=" << (muteWhenInactive ? 1 : 0) << "\n"
         << "simulation_frequency=" << simulationFrequency << "\n"

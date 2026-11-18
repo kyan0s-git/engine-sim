@@ -56,6 +56,7 @@ namespace {
         int perspective = 0;        // 0 outside, 1 cockpit, 2 engine bay
         float crackle = -1;         // overrun pops, -1 = default
         float fiVolume = -1;        // turbo/supercharger sound, -1 = default
+        int flutterStyle = 0;       // 0 as simulated, 1 pronounced
     };
 
     // Offline audio: rendered after every frame instead of by the audio
@@ -233,11 +234,12 @@ int main(int argc, char *argv[]) {
         else if (arg == "--perspective" && value) options.perspective = std::atoi(argv[++i]);
         else if (arg == "--crackle" && value) options.crackle = static_cast<float>(std::atof(argv[++i]));
         else if (arg == "--fi-volume" && value) options.fiVolume = static_cast<float>(std::atof(argv[++i]));
+        else if (arg == "--pronounced-flutter") options.flutterStyle = 1;
         else if (arg == "--help" || arg == "-h") {
             std::printf(
                 "Usage: %s [--data <dir>] [--auto] [--preset economy|performance|race] [--tune <file>]\n"
                 "          [--shift <rpm>] [--launch <rpm>] [--anti-lag] [--time <s>] [--trace <s>] [--brake-at <s>]\n"
-                "          [--wav <file>] [--rev] [--perspective 0|1|2] [--crackle <0-1>] [--fi-volume <x>] <script.mr>\n",
+                "          [--wav <file>] [--rev] [--perspective 0|1|2] [--crackle <0-1>] [--fi-volume <x>] [--pronounced-flutter] <script.mr>\n",
                 argv[0]);
             return 0;
         }
@@ -280,6 +282,7 @@ int main(int argc, char *argv[]) {
         audio.perspective = options.perspective;
         if (options.crackle >= 0) audio.overrunCrackle = options.crackle;
         if (options.fiVolume >= 0) audio.forcedInductionVolume = options.fiVolume;
+        audio.flutterStyle = options.flutterStyle;
         simulator->synthesizer().setAudioParameters(audio);
     }
     else {

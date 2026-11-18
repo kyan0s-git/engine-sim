@@ -114,6 +114,7 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
             double compressorFlow = 0;  // [mol/s]
             double turbinePower = 0;    // [W]
             double compressorPower = 0;
+            double ductFlow = 0;        // through the compressor while surging [kg/s]
             bool active = true;
         };
 
@@ -203,7 +204,8 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         double centrifugalSourcePressureRatio(double omega) const;
         void processCentrifugal(Unit &unit, double dt, double scale, const GasSystem::Mix &mix, double T1);
         void processPositiveDisplacement(double dt, const GasSystem::Mix &mix, double T1);
-        void processFlutter(double dt, const GasSystem::Mix &mix);
+        void updateSurge();
+        void processSurge(Unit &unit, double dt, double share, const GasSystem::Mix &mix, double T1);
         double plenumPressure() const;
         double crankSpeed() const;
 
@@ -263,9 +265,8 @@ class ForcedInduction : public Part, public atg_scs::ForceGenerator {
         bool m_twinScroll;
         double m_whistlePitch;
         double m_surge;
-        double m_flutter;               // flutter burst level [0, 1]
-        double m_flutterDepth;          // how far past the surge line [0, 1]
-        double m_flutterPhase;          // [cycles]
+        double m_flutter;               // reverse flow while surging [0, 1]
+        bool m_surging;                 // compressor past its surge line
         double m_wastegateIntegral;
         double m_boostSensor;           // filtered boost [Pa]
         double m_boostRate;             // its rate of change [Pa/s]

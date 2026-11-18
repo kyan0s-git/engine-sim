@@ -40,6 +40,7 @@ class Synthesizer {
             float intakeVolume = 1.0f;
             float mechanicalVolume = 1.0f;
             float overrunCrackle = 0.35f;
+            int flutterStyle = 0;           // turbo flutter: 0 as simulated, 1 pronounced ("stu-tu-tu")
 
             // Where the listener is: 0 outside behind the car, 1 in the
             // cockpit, 2 by the engine
@@ -189,7 +190,9 @@ class Synthesizer {
         Bandpass m_blowoffBand1, m_blowoffBand2, m_wastegateBand;
         Bandpass m_whistleBand2, m_inducerBand;
         float m_whistleRms = 0;
-        Bandpass m_hissBand, m_flutterLow;
+        Bandpass m_hissBand, m_flutterLow, m_flutterTone, m_flutterTone2;
+        float m_flutterLast = 0, m_flutterRing = 0;
+        float m_envelopeMemory = 0, m_envelopeMemoryRelease = 1;
         OnePole m_hissLow, m_turbineLow1, m_turbineLow2;
         float m_blowoffSlow = -1, m_blowoffFollow = 0;
         float m_spoolMemory = 0, m_spoolMemoryRelease = 1;

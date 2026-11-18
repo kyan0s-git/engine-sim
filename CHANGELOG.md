@@ -45,11 +45,17 @@ Ange Yaghi in the [original repository](https://github.com/ange-yaghi/engine-sim
 
 - Turbo flutter: without a blow-off valve (Designer > Forced induction >
   Blow-off valve > None, or the Blow-off valve checkbox in the tuning
-  window) the compressor now surges when the throttle shuts, the
-  "stu-tu-tu" of air bursting back out through the wheel 10-25 times a
-  second, which also slows the turbo. It was offered before but never
-  happened: the simulation only counted air actually flowing backwards,
-  which the spinning wheel prevented.
+  window) the compressor now surges when the throttle shuts. It was
+  offered before but never happened. Surge is simulated after Greitzer's
+  model: past its surge line the compressor can't hold the charge, the
+  air in the ducts reverses and the charge blows back out through the
+  wheel until it takes hold again, about 20 times a second on the
+  presets (set by the ducts and the charge volume), braking the wheel
+  each time. Settings > Audio > Turbo flutter: "As simulated" (the air
+  rushing back, the pressure pulses and the whistle chopped by them) or
+  "Pronounced" (adds a ringing "tu" to each burst).
+- The blow-off valve and flutter follow how loud the engine was just
+  before the lift, not the quiet overrun after it.
 
 ### Fixes
 - The boost controller made the wastegate oscillate: the boost swung

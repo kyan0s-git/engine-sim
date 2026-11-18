@@ -2194,6 +2194,13 @@ void AppUi::buildSettingsWindow() {
             label("Overrun pops and crackles");
             float crackle = p.overrunCrackle * 100;
             if (ImGui::SliderFloat("##crackle", &crackle, 0, 100, "%.0f %%")) { p.overrunCrackle = crackle / 100; changed = true; }
+            label("Turbo flutter");
+            const char *flutterStyles[] = { "As simulated", "Pronounced (stu-tu-tu)" };
+            if (ImGui::Combo("##flutter", &p.flutterStyle, flutterStyles, 2)) changed = true;
+            ui::HelpMarker("Turbochargers without a blow-off valve surge when the throttle shuts. 'As simulated' "
+                "plays what the simulation produces: air rushing back through the compressor, the pressure "
+                "pulses and the whistle chopped by them. 'Pronounced' adds a ringing note to each burst, the "
+                "exaggerated stu-tu-tu of videos and games.");
             ImGui::TextDisabled("The turbo / supercharger level is in the Tuning window (per engine).");
             label("Audio buffer target");
             float latency = p.targetAudioLatency * 1000;
