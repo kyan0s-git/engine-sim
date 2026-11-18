@@ -529,8 +529,8 @@ void ForcedInduction::process(double dt) {
 // through the wheel, and once its pressure has fallen the wheel takes hold
 // again and refills it, over and over. What sets the pace is the air in the
 // ducts either side of the wheel, which has to be stopped and accelerated
-// each way, against the charge volume acting as a spring: about ten to
-// twenty cycles a second on a car, slowing and dying away as the bursts
+// each way, against the charge volume acting as a spring: about eleven
+// to fourteen cycles a second on a car, slowing and dying away as the bursts
 // brake the wheel and the pressure it can make falls.
 void ForcedInduction::updateSurge() {
     const bool centrifugal = isTurbocharger() || m_type == Type::Centrifugal;
@@ -588,8 +588,11 @@ void ForcedInduction::processSurge(Unit &unit, double dt, double share, const Ga
     // The air in the ducts (inlet pipe, compressor, charge pipe) is
     // accelerated by the difference between what the wheel makes and the
     // charge pressure
+    // The length is the equivalent of the inlet, compressor, intercooler
+    // and charge piping; 6 m gives the pace measured on a recording of a
+    // tuned 2JZ fluttering (pulses 75-95 ms apart, the first ones closer)
     const double inducerArea = constants::pi * std::pow(0.7 * m_tipRadius, 2.0);
-    constexpr double DuctLength = 1.5;     // [m]
+    constexpr double DuctLength = 6.0;     // [m]
     const double chargeRise = m_charge.pressure() - Ambient;
     unit.ductFlow += dt * (inducerArea / DuctLength) * (rise - chargeRise);
     unit.ductFlow = clamp(unit.ductFlow, -2.0 * m_maxCompressorFlow, 2.0 * m_maxCompressorFlow);
@@ -667,12 +670,14 @@ double ForcedInduction::getWhineLevel() const {
     // whistle stayed at a sixth of its level on full boost
     const double s = clamp(m_units[0].omega / (0.45 * m_maxSpeed), 0.0, 1.0);
     const double flow = clamp(
-        std::abs(getCompressorFlow()) * units::AirMolecularMass / 0.3, 0.0, 1.0);
+        std::max(getCompressorFlow(), 0.0) * units::AirMolecularMass / 0.3, 0.0, 1.0);
     return s * std::sqrt(s) * (0.3 + 0.7 * flow);
 }
 
 double ForcedInduction::getFlowLevel() const {
-    return clamp(std::abs(getCompressorFlow()) * units::AirMolecularMass / std::max(m_maxCompressorFlow, 0.01), 0.0, 1.0);
+    // Forward flow only: air going back out through the wheel (surge) has
+    // its own sound, and doesn't make the whistle or the inlet hiss
+    return clamp(std::max(getCompressorFlow(), 0.0) * units::AirMolecularMass / std::max(m_maxCompressorFlow, 0.01), 0.0, 1.0);
 }
 
 double ForcedInduction::getWastegateBypass() const {

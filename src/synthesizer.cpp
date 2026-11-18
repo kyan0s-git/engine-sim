@@ -132,6 +132,9 @@ void Synthesizer::initialize(const Parameters &p) {
     m_blowoffDecay = std::exp(-1.0f / (0.45f * fs));
     m_spoolMemoryRelease = std::exp(-1.0f / (0.6f * fs));
     m_envelopeMemoryRelease = std::exp(-1.0f / (1.5f * fs));
+    m_flutterAttack = 1.0f - std::exp(-1.0f / (0.006f * fs));
+    m_flutterRelease = 1.0f - std::exp(-1.0f / (0.010f * fs));
+    m_flutterRingBand.set(640.0f, 12.0f, fs);
     m_raspBand.set(2400.0f, 0.6f, fs);
     m_cabinBoom.set(95.0f, 1.3f, fs);
     m_cabinLow1.set(1500.0f, fs);
@@ -723,42 +726,65 @@ void Synthesizer::renderForcedInduction(int n, const AudioParameters &parameters
 
         float bursts = 0;
 
-        // Compressor surge without a blow-off valve ("flutter"). The
-        // simulation gives the air flowing back out through the wheel on
-        // each surge cycle (its pace comes from the ducts and the charge
-        // volume); what is heard is that air rushing back out of the inlet,
-        // and the pressure pulse it sends down the inlet pipe as it starts,
-        // a hollow thump. The whistle above is chopped by the same cycles,
-        // because it follows the flow through the compressor. The
-        // pronounced style adds a ringing note to each burst.
-        if (surge > 0.002f || std::abs(m_flutterRing) > 1e-4f) {
+        // Compressor surge without a blow-off valve ("flutter"), matched to
+        // a recording of a tuned 2JZ: each surge cycle the simulation gives
+        // (pulses 75-95 ms apart there) is a short tonal "tu", rising over
+        // 10-20 ms and dying over 10-25 ms, pitched at the wheel's rotation
+        // (640 Hz there), so it falls as each burst brakes the wheel; the
+        // first carries a broadband "s". It is the loudest thing after the
+        // lift: in its
+        // band louder than the engine was revving, fading 12 dB over the
+        // second or so it lasts.
+        if (surge > 0.002f || m_flutterEnvelope > 1e-4f) {
+            if (m_flutterQuiet > 0.25f) {                     // a new event
+                m_flutterAge = 0;
+                m_flutterStartShaft = std::max(shaft, 1.0f);
+            }
+            m_flutterQuiet = 0;
+            m_flutterAge += 1.0f / fs;
+
+            // The note is the wheel's rotation frequency: in the recording the
+            // whistle before the lift (the blade passing frequency of a
+            // 6 + 6 blade wheel) was 11.7 times the pitch of the bursts.
+            // So a big, slow turbo flutters low, a small fast one chirps,
+            // and every one falls as its wheel slows
+            const float pitch = std::clamp(shaft, 100.0f, 3000.0f);
             if ((m_fiCounter & 31) == 1) {
-                const float ring = std::clamp(380.0f + 0.3f * shaft, 380.0f, 1400.0f);
-                m_flutterTone.set(ring, 9.0f, fs);
-                m_flutterTone2.set(2.2f * ring, 7.0f, fs);
-                m_flutterLow.set(190.0f, 2.0f, fs);
-                m_flutterBand.set(2200.0f, 0.8f, fs);
+                m_flutterTone.set(pitch, 5.0f, fs);
+                m_flutterTone2.set(2.0f * pitch, 4.0f, fs);
+                m_flutterBand.set(2600.0f, 0.7f, fs);
             }
-            // How fast the backflow is building (per 5 ms)
-            const float rise = std::max(surge - m_flutterLast, 0.0f) * 0.005f * fs;
-            m_flutterLast = surge;
+
+            // The envelope follows the backflow, shaped to the measured
+            // attack and decay
+            const float target = std::min(surge * 2.0f, 1.0f);
+            m_flutterEnvelope += (target - m_flutterEnvelope)
+                * ((target > m_flutterEnvelope) ? m_flutterAttack : m_flutterRelease);
+
+            m_flutterPhase += twoPi * pitch / fs;
+            if (m_flutterPhase > twoPi) m_flutterPhase -= twoPi;
             const float r = noise();
+            // Mostly the fundamental, as in the recording, with a faint
+            // octave and some roughness
+            const float tone = static_cast<float>(std::sin(m_flutterPhase) + 0.12 * std::sin(2 * m_flutterPhase));
+            const float body = 0.7f * tone + 2.4f * m_flutterTone.process(r) + 0.3f * m_flutterTone2.process(r);
+            const float s = std::exp(-m_flutterAge / 0.12f);    // the "s" of the first burst
 
-            bursts += 3.5f * surge * m_flutterBand.process(r)
-                + 22.0f * m_flutterLow.process(rise * r);
-
+            float tu = m_flutterEnvelope * (body + 1.2f * s * m_flutterBand.process(r));
             if (parameters.flutterStyle == 1) {
-                const float click = std::min(rise, 1.0f) * ((r > 0) ? 1.0f : -1.0f);
-                const float excitation = click + 0.5f * surge * noise();
-                m_flutterRing = m_flutterTone.process(excitation * 6.0f);
-                bursts += 6.0f * m_flutterRing + 2.0f * m_flutterTone2.process(excitation * 4.0f);
+                // Pronounced: a ringing, more tonal note, a little louder
+                m_flutterRing = m_flutterRingBand.process(m_flutterEnvelope * tone);
+                tu = 1.3f * tu + 4.0f * m_flutterRing;
             }
-            else {
-                m_flutterRing = 0;
-            }
+            // Fading with the wheel: the sound a compressor makes goes with
+            // the square of its tip speed (about 10 dB over the event in the
+            // recording, as the wheel slowed by a third)
+            const float slowing = std::clamp(shaft / m_flutterStartShaft, 0.0f, 1.0f);
+            bursts += 4.5f * slowing * slowing * tu;
         }
         else {
-            m_flutterLast = surge;
+            m_flutterQuiet += 1.0f / fs;
+            m_flutterEnvelope = 0;
         }
 
         // Blow-off: a sharp vented "pssh" or a soft recirculating whoosh.
